@@ -354,11 +354,24 @@ function Store_read(key) {
   try { return JSON.parse(localStorage.getItem(key)) || null; } catch(e) { return null; }
 }
 function Store_write(key, data) {
-  try { localStorage.setItem(key, JSON.stringify(data)); return true; } catch(e) { return false; }
+  try { localStorage.setItem(key, JSON.stringify(data)); Store._cache[key] = data; return true; } catch(e) { return false; }
 }
 
 var Store = {
-  getResidents: function() { return Store_read(STORE_KEYS.residents) || []; },
+  _cache: {},
+
+  _cached: function(key) {
+    if (this._cache[key] === undefined) {
+      this._cache[key] = Store_read(key);
+    }
+    return this._cache[key] || (key === STORE_KEYS.readings || key === STORE_KEYS.residents ? [] : null);
+  },
+
+  _invalidate: function(key) {
+    delete this._cache[key];
+  },
+
+  getResidents: function() { return this._cached(STORE_KEYS.residents) || []; },
   getResidentById: function(id) { return this.getResidents().find(function(r) { return r.id === id; }) || null; },
 
   addResident: function(data) {
@@ -388,7 +401,7 @@ var Store = {
 
   deleteResident: function(id) {
     var residents = this.getResidents().filter(function(r) { return r.id !== id; });
-    var readings = Store_read(STORE_KEYS.readings) || [];
+    var readings = this._cached(STORE_KEYS.readings) || [];
     var filteredReadings = readings.filter(function(r) { return r.userId !== id; });
     Store_write(STORE_KEYS.residents, residents);
     Store_write(STORE_KEYS.readings, filteredReadings);
@@ -396,24 +409,24 @@ var Store = {
   },
 
   getReadings: function(userId) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     return all.filter(function(r) { return r.userId === userId; }).sort(function(a,b) { return b.month.localeCompare(a.month); });
   },
 
   getReadingsByMonth: function(month) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     return all.filter(function(r) { return r.month === month; });
   },
 
   getLastReadingBefore: function(userId, month) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     var userReadings = all.filter(function(r) { return r.userId === userId && r.month < month; });
     userReadings.sort(function(a,b) { return b.month.localeCompare(a.month); });
     return userReadings[0] || null;
   },
 
   getReadingByUserAndMonth: function(userId, month) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     return all.find(function(r) { return r.userId === userId && r.month === month; }) || null;
   },
 
@@ -433,7 +446,7 @@ var Store = {
     currentReading = parseFloat(currentReading);
     if (isNaN(currentReading) || currentReading < 0) return { ok: false, msg: '请输入有效的读数' };
 
-    var allReadings = Store_read(STORE_KEYS.readings) || [];
+    var allReadings = this._cached(STORE_KEYS.readings) || [];
     var existingIdx = allReadings.findIndex(function(r) { return r.userId === userId && r.month === month; });
 
     // 确定上月底数：优先查找本月之前最近一条抄表记录
@@ -487,7 +500,7 @@ var Store = {
   },
 
   togglePaid: function(readingId) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     var idx = all.findIndex(function(r) { return r.id === readingId; });
     if (idx === -1) return false;
     all[idx].isPaid = !all[idx].isPaid;
@@ -496,7 +509,7 @@ var Store = {
   },
 
   updateReadingFee: function(readingId, newFee) {
-    var all = Store_read(STORE_KEYS.readings) || [];
+    var all = this._cached(STORE_KEYS.readings) || [];
     var idx = all.findIndex(function(r) { return r.id === readingId; });
     if (idx === -1) return false;
     all[idx].totalFee = Math.round(newFee * 100) / 100;
@@ -518,7 +531,7 @@ var Store = {
     return JSON.stringify({
       version: 1, exportedAt: new Date().toISOString(),
       residents: this.getResidents(),
-      readings: Store_read(STORE_KEYS.readings) || [],
+      readings: this._cached(STORE_KEYS.readings) || [],
       settings: this.getSettings()
     }, null, 2);
   },
@@ -542,6 +555,7 @@ var Store = {
     localStorage.removeItem(STORE_KEYS.residents);
     localStorage.removeItem(STORE_KEYS.readings);
     localStorage.removeItem(STORE_KEYS.settings);
+    this._cache = {};
   },
 
   _read: Store_read
@@ -1460,26 +1474,29 @@ function renderBillsView(subArea) {
   // 第1层：未选大区也未选子地区 → 显示大区摘要卡片，避免渲染全部账单
   if (!billsRegion && !subArea) {
     var regionOrder = ['地区1', '地区2', '现金'];
+    // 一次遍历预计算各区统计
+    var regionStats = {};
+    var allResidents = Store.getResidents();
+    allResidents.forEach(function(rr) {
+      var rgn = AREA_REGION[rr.address] || '其他';
+      if (!regionStats[rgn]) regionStats[rgn] = { total: 0, billCount: 0, usage: 0, fee: 0 };
+      regionStats[rgn].total++;
+    });
+    readings.forEach(function(rr) {
+      var rgn = AREA_REGION[(residentsMap[rr.userId] || {}).address] || '其他';
+      if (!regionStats[rgn]) regionStats[rgn] = { total: 0, billCount: 0, usage: 0, fee: 0 };
+      regionStats[rgn].billCount++;
+      if (!rr.isFirstReading) { regionStats[rgn].usage += rr.usage || 0; regionStats[rgn].fee += rr.totalFee || 0; }
+    });
     var regionHtml = '';
     regionOrder.forEach(function(reg) {
-      var regReadings = readings.filter(function(r) {
-        return (AREA_REGION[(residentsMap[r.userId] || {}).address] || '其他') === reg;
-      });
-      if (regReadings.length === 0) return;
-      var regUsage = 0, regFee = 0;
-      regReadings.forEach(function(rr) {
-        if (!rr.isFirstReading) { regUsage += rr.usage || 0; regFee += rr.totalFee || 0; }
-      });
-      // 该大区下有多少户（从居民表统计）
-      var regTotal = 0;
-      Store.getResidents().forEach(function(rr) {
-        if ((AREA_REGION[rr.address] || '其他') === reg) regTotal++;
-      });
+      var st = regionStats[reg];
+      if (!st || st.billCount === 0) return;
       regionHtml += '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 cursor-pointer hover:bg-blue-50 active:scale-[0.98] transition-all" data-region-nav="' + escHtml(reg) + '">' +
         '<div class="flex items-center justify-between">' +
           '<div class="flex-1">' +
             '<div class="font-bold text-sm">🏘 ' + escHtml(reg) + '</div>' +
-            '<div class="text-xs text-gray-500 mt-0.5">' + regReadings.length + '/' + regTotal + ' 户 · 用水 ' + formatNum(regUsage) + ' 吨 · 水费 ' + formatMoney(regFee) + '</div>' +
+            '<div class="text-xs text-gray-500 mt-0.5">' + st.billCount + '/' + st.total + ' 户 · 用水 ' + formatNum(st.usage) + ' 吨 · 水费 ' + formatMoney(st.fee) + '</div>' +
           '</div>' +
           '<span class="text-gray-300 text-lg">›</span>' +
         '</div>' +
