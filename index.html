@@ -2278,15 +2278,30 @@ function init() {
   $('#bills-month').value = nowMonth;
   $('#export-month').value = nowMonth;
 
-  // 自动检测预置数据：首次打开时 localStorage 为空且有预置数据
-  if (typeof PRELOADED_WATER_DATA !== 'undefined' && Store.getResidents().length === 0) {
-    var jsonStr = JSON.stringify(PRELOADED_WATER_DATA);
-    var result = Store.importAll(jsonStr);
-    if (result.ok) {
-      showToast('✅ 已自动导入预置数据：' + result.count.residents + ' 户住户、' + result.count.readings + ' 条记录', 'success');
-    }
+  // 首次打开：localStorage 为空时自动从 data.json 加载预置数据
+  if (Store.getResidents().length === 0) {
+    fetch('data.json')
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.text();
+      })
+      .then(function(jsonStr) {
+        var result = Store.importAll(jsonStr);
+        if (result.ok) {
+          showToast('✅ 已加载预置数据：' + result.count.residents + ' 户住户、' + result.count.readings + ' 条记录', 'success');
+        }
+        startApp();
+      })
+      .catch(function(err) {
+        console.warn('预置数据加载失败（可能是首次使用）:', err.message);
+        startApp();
+      });
+  } else {
+    startApp();
   }
+}
 
+function startApp() {
   buildAreaIndex();
   renderResidentList();
   updateHeaderMonth();

@@ -1,6 +1,6 @@
 // 水表抄表计费工具 - Service Worker
 // 缓存优先策略，支持离线使用
-var CACHE_NAME = 'water-meter-v1';
+var CACHE_NAME = 'water-meter-v2';
 var APP_FILE = 'index.html';
 
 self.addEventListener('install', function(e) {
