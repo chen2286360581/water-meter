@@ -1,0 +1,2299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="水表抄表">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#2563eb">
+<title>水表抄表计费工具</title>
+<script src="https://cdn.tailwindcss.com">
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
+</script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: { primary: '#2563eb', danger: '#dc2626', success: '#16a34a', warn: '#f59e0b' }
+    }
+  }
+}
+</script>
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  body { -webkit-font-smoothing: antialiased; padding-bottom: env(safe-area-inset-bottom); }
+  .view { display: none; }
+  .view.active { display: block; }
+  .tab-btn { transition: all 0.15s ease; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; padding: 1rem; }
+  .modal-overlay.show { display: flex; }
+  .toast { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 200; padding: 0.75rem 1.5rem; border-radius: 0.5rem; color: #fff; font-weight: 500; font-size: 0.875rem; box-shadow: 0 4px 12px rgba(0,0,0,0.25); transition: all 0.3s ease; opacity: 0; pointer-events: none; max-width: 90vw; text-align: center; }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #dc2626; }
+  .toast.warn { background: #d97706; }
+  .toast.success { background: #16a34a; }
+  .input-lg { font-size: 1.5rem; height: 3.5rem; text-align: center; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  .area-group-header { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); }
+  .fee-editable { cursor: pointer; border-bottom: 1.5px dashed #9ca3af; transition: all 0.15s; }
+  .fee-editable:hover { border-bottom-color: #2563eb; color: #2563eb; }
+  .area-index-bar { display: flex; flex-wrap: nowrap; gap: 0.375rem; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; padding: 0.375rem 0 0.5rem 0; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+  .area-index-bar::-webkit-scrollbar { height: 4px; }
+  .area-index-bar::-webkit-scrollbar-track { background: transparent; }
+  .area-index-bar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+  .area-index-bar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  .area-chip { flex-shrink: 0; padding: 0.375rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; border: 1px solid #d1d5db; background: #fff; color: #6b7280; cursor: pointer; white-space: nowrap; transition: all 0.15s ease; user-select: none; -webkit-user-select: none; }
+  .area-chip.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .area-chip:active { transform: scale(0.95); }
+  .sub-chip { background: #f8fafc; border-color: #e2e8f0; font-size: 0.7rem; }
+  .sub-chip.active { background: #0891b2; color: #fff; border-color: #0891b2; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900 min-h-screen">
+
+<!-- 顶部导航栏 -->
+<header class="bg-primary text-white sticky top-0 z-50 shadow-md">
+  <div class="max-w-lg mx-auto flex items-center justify-between px-4 h-14">
+    <h1 class="text-lg font-bold tracking-wide">💧 水表抄表计费</h1>
+    <div class="text-xs opacity-90" id="header-month"></div>
+  </div>
+</header>
+
+<!-- 主内容区 -->
+<main class="max-w-lg mx-auto pb-20 pt-2 px-3">
+
+  <!-- ===== 视图1: 住户管理 ===== -->
+  <section id="view-residents" class="view active">
+    <div class="flex gap-2 mb-3">
+      <input type="search" id="resident-search" placeholder="🔍 搜索户号/姓名/房号..."
+        class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+      <button id="btn-add-resident" class="h-11 px-4 bg-primary text-white rounded-lg font-medium text-sm whitespace-nowrap hover:bg-blue-700 active:scale-95 transition-transform">
+        ＋ 新增
+      </button>
+    </div>
+    <div id="resident-area-index" class="area-index-bar mb-2"></div>
+    <div id="resident-subarea-index" class="area-index-bar mb-3 hidden"></div>
+    <div id="resident-list" class="space-y-2"></div>
+    <div id="resident-empty" class="text-center py-16 text-gray-400 hidden">
+      <div class="text-5xl mb-3" id="resident-empty-icon">📋</div>
+      <p class="text-sm" id="resident-empty-text">暂无住户信息</p>
+      <p class="text-xs mt-1" id="resident-empty-hint">点击右上角「＋ 新增」添加住户</p>
+    </div>
+  </section>
+
+  <!-- ===== 视图2: 抄表录入 ===== -->
+  <section id="view-reading" class="view">
+    <div class="flex items-center gap-3 mb-3">
+      <input type="month" id="reading-month" class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+      <div class="text-sm text-gray-500 whitespace-nowrap" id="reading-progress">0/0 户</div>
+    </div>
+    <div class="w-full bg-gray-200 rounded-full h-2 mb-3">
+      <div id="reading-progress-bar" class="bg-primary h-2 rounded-full transition-all duration-300" style="width:0%"></div>
+    </div>
+    <input type="search" id="reading-search" placeholder="🔍 搜索户号/姓名/房号..."
+      class="w-full h-11 px-3 mb-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+    <div id="reading-area-index" class="area-index-bar mb-2"></div>
+    <div id="reading-subarea-index" class="area-index-bar mb-3 hidden"></div>
+
+    <!-- 住户列表模式 -->
+    <div id="reading-list-mode">
+      <div id="reading-resident-list" class="space-y-2"></div>
+      <div id="reading-list-empty" class="text-center py-12 text-gray-400 hidden">
+        <div class="text-4xl mb-2" id="reading-empty-icon">📋</div>
+        <p class="text-sm" id="reading-empty-text">暂无住户，请先到「住户管理」添加</p>
+        <p class="text-xs mt-1" id="reading-empty-hint"></p>
+      </div>
+    </div>
+
+    <!-- 录入模式 -->
+    <div id="reading-entry-mode" class="hidden">
+      <button id="btn-reading-back" class="text-primary text-sm mb-3 flex items-center gap-1 hover:underline">
+        ← 返回列表
+      </button>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <div class="flex items-center justify-between mb-3 pb-3 border-b border-gray-100">
+          <div>
+            <div class="font-bold text-lg" id="entry-name"></div>
+            <div class="text-xs text-gray-500" id="entry-info"></div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-gray-400">上月底数</div>
+            <div class="text-xl font-bold text-gray-600" id="entry-last-reading">--</div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-sm font-medium text-gray-600 mb-1">本次读数（吨）</label>
+          <input type="number" id="entry-current-reading" inputmode="decimal" min="0" step="0.01" placeholder="请输入本次水表读数"
+            class="input-lg w-full px-4 py-2 rounded-lg border-2 border-primary bg-blue-50 focus:outline-none focus:ring-2 focus:ring-primary">
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-gray-500">本月用水量</div>
+            <div class="text-2xl font-bold text-primary" id="entry-usage">0.00 吨</div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-gray-500">本月水费</div>
+            <div class="text-2xl font-bold text-success" id="entry-fee">¥0.00</div>
+          </div>
+        </div>
+        <div id="entry-first-notice" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-700 mb-3">
+          ⚠️ 首次录入，本次读数将作为初始底数，不计费。
+        </div>
+        <button id="btn-save-reading" class="w-full h-14 bg-primary text-white font-bold text-lg rounded-xl hover:bg-blue-700 active:scale-95 transition-transform shadow-lg shadow-blue-200">
+          保存并下一户 →
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 视图3: 账单查询 ===== -->
+  <section id="view-bills" class="view">
+    <div class="flex gap-2 mb-3">
+      <input type="month" id="bills-month" class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+      <select id="bills-filter" class="h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+        <option value="all">全部</option>
+        <option value="paid">已缴费</option>
+        <option value="unpaid">未缴费</option>
+        <option value="highUsage">⚠ 高用水量</option>
+      </select>
+    </div>
+    <div class="grid grid-cols-3 gap-2 mb-3">
+      <div class="bg-white rounded-lg p-3 text-center shadow-sm border border-gray-200">
+        <div class="text-xs text-gray-500">抄表户数</div>
+        <div class="text-xl font-bold text-gray-800" id="bills-count">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-3 text-center shadow-sm border border-gray-200">
+        <div class="text-xs text-gray-500">总用水量</div>
+        <div class="text-xl font-bold text-primary" id="bills-total-usage">0</div>
+      </div>
+      <div class="bg-white rounded-lg p-3 text-center shadow-sm border border-gray-200">
+        <div class="text-xs text-gray-500">总水费</div>
+        <div class="text-xl font-bold text-success" id="bills-total-fee">¥0</div>
+      </div>
+    </div>
+    <div id="bills-area-index" class="area-index-bar mb-2"></div>
+    <div id="bills-subarea-index" class="area-index-bar mb-3 hidden"></div>
+    <div id="bills-list" class="space-y-2"></div>
+    <div id="bills-empty" class="text-center py-16 text-gray-400 hidden">
+      <div class="text-5xl mb-3">📭</div>
+      <p class="text-sm">该月份暂无抄表记录</p>
+    </div>
+  </section>
+
+  <!-- ===== 视图4: 数据导出 ===== -->
+  <section id="view-export" class="view">
+    <div class="space-y-3">
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <h3 class="font-bold text-gray-800 mb-2">📊 导出当月账单 (CSV)</h3>
+        <p class="text-xs text-gray-500 mb-3">导出指定月份的抄表明细，可用 Excel 打开打印</p>
+        <div class="flex gap-2">
+          <input type="month" id="export-month" class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+          <button id="btn-export-csv" class="h-11 px-5 bg-primary text-white rounded-lg font-medium text-sm hover:bg-blue-700 active:scale-95 transition-transform">导出 CSV</button>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <h3 class="font-bold text-gray-800 mb-2">💾 全量数据备份 (JSON)</h3>
+        <p class="text-xs text-gray-500 mb-3">备份全部住户档案与抄表记录，用于数据迁移或恢复</p>
+        <button id="btn-export-json" class="h-11 px-5 bg-success text-white rounded-lg font-medium text-sm hover:bg-green-700 active:scale-95 transition-transform">下载备份文件</button>
+      </div>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <h3 class="font-bold text-gray-800 mb-2">📥 导入备份恢复数据</h3>
+        <p class="text-xs text-gray-500 mb-3">选择之前导出的 JSON 备份文件，恢复全部数据（将覆盖当前数据）</p>
+        <input type="file" id="import-file-input" accept=".json" class="hidden">
+        <button id="btn-import-json" class="h-11 px-5 bg-warn text-white rounded-lg font-medium text-sm hover:bg-amber-600 active:scale-95 transition-transform">选择文件并导入</button>
+      </div>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-green-300">
+        <h3 class="font-bold text-gray-800 mb-2">📋 导入 Excel 水表单</h3>
+        <p class="text-xs text-gray-500 mb-3">导入 Excel 格式的水表记录（.xlsx / .xls），自动识别表头列名，支持同时导入住户和抄表数据</p>
+        <input type="file" id="excel-file-input" accept=".xlsx,.xls" class="hidden">
+        <div class="flex gap-2 flex-wrap">
+          <button id="btn-import-excel" class="h-11 px-5 bg-success text-white rounded-lg font-medium text-sm hover:bg-green-700 active:scale-95 transition-transform">📥 选择 Excel 文件导入</button>
+          <button id="btn-download-template" class="h-11 px-5 bg-gray-600 text-white rounded-lg font-medium text-sm hover:bg-gray-700 active:scale-95 transition-transform">📝 下载导入模板</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 视图5: 系统设置 ===== -->
+  <section id="view-settings" class="view">
+    <div class="space-y-3">
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <h3 class="font-bold text-gray-800 mb-2">💰 水价单价</h3>
+        <p class="text-xs text-gray-500 mb-2">修改后新生成的账单按新价格计算，历史账单不变</p>
+        <div class="flex items-center gap-2">
+          <input type="number" id="setting-price" min="0.01" step="0.01" value="3.00"
+            class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+          <span class="text-gray-500 text-sm">元/吨</span>
+          <button id="btn-save-price" class="h-11 px-4 bg-primary text-white rounded-lg text-sm hover:bg-blue-700 active:scale-95 transition-transform">保存</button>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+        <h3 class="font-bold text-gray-800 mb-2">⚠️ 高用水量提醒阈值</h3>
+        <p class="text-xs text-gray-500 mb-2">单月用水量超过此值将弹出提醒</p>
+        <div class="flex items-center gap-2">
+          <input type="number" id="setting-threshold" min="1" step="1" value="50"
+            class="flex-1 h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+          <span class="text-gray-500 text-sm">吨/月</span>
+          <button id="btn-save-threshold" class="h-11 px-4 bg-primary text-white rounded-lg text-sm hover:bg-blue-700 active:scale-95 transition-transform">保存</button>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl p-4 shadow-sm border border-red-200">
+        <h3 class="font-bold text-red-600 mb-2">🗑️ 清空全部数据</h3>
+        <p class="text-xs text-gray-500 mb-3">删除所有住户档案和抄表记录，此操作不可恢复！</p>
+        <button id="btn-clear-data" class="h-11 px-5 bg-danger text-white rounded-lg font-medium text-sm hover:bg-red-700 active:scale-95 transition-transform">清空全部数据</button>
+      </div>
+      <div class="text-center text-xs text-gray-400 py-4">水表抄表计费工具 v1.0 | 数据仅存储在本地浏览器</div>
+    </div>
+  </section>
+</main>
+
+<!-- 底部 Tab 导航 -->
+<nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40" style="padding-bottom: env(safe-area-inset-bottom);">
+  <div class="max-w-lg mx-auto flex justify-around h-16">
+    <button class="tab-btn active flex flex-col items-center justify-center flex-1 text-primary" data-view="residents">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+      <span class="text-xs mt-0.5">住户</span>
+    </button>
+    <button class="tab-btn flex flex-col items-center justify-center flex-1 text-gray-400" data-view="reading">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      <span class="text-xs mt-0.5">抄表</span>
+    </button>
+    <button class="tab-btn flex flex-col items-center justify-center flex-1 text-gray-400" data-view="bills">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <span class="text-xs mt-0.5">账单</span>
+    </button>
+    <button class="tab-btn flex flex-col items-center justify-center flex-1 text-gray-400" data-view="export">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <span class="text-xs mt-0.5">导出</span>
+    </button>
+    <button class="tab-btn flex flex-col items-center justify-center flex-1 text-gray-400" data-view="settings">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      <span class="text-xs mt-0.5">设置</span>
+    </button>
+  </div>
+</nav>
+
+<!-- 模态框容器 -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto" id="modal-content"></div>
+</div>
+
+<!-- Toast 消息 -->
+<div class="toast" id="toast"></div>
+
+<!-- 确认对话框 -->
+<div class="modal-overlay" id="confirm-overlay">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 text-center">
+    <div id="confirm-icon" class="text-4xl mb-3"></div>
+    <p id="confirm-msg" class="text-sm text-gray-700 mb-4 whitespace-pre-line"></p>
+    <div class="flex gap-2">
+      <button id="confirm-cancel" class="flex-1 h-11 rounded-lg border border-gray-300 text-gray-600 font-medium text-sm hover:bg-gray-50">取消</button>
+      <button id="confirm-ok" class="flex-1 h-11 rounded-lg bg-primary text-white font-medium text-sm hover:bg-blue-700">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 清空数据确认对话框 -->
+<div class="modal-overlay" id="clear-confirm-overlay">
+  <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 text-center">
+    <div class="text-4xl mb-3">⚠️</div>
+    <p class="text-sm font-bold text-red-600 mb-2">确认清空全部数据？</p>
+    <p class="text-xs text-gray-500 mb-3">请输入密码 <b>0000</b> 确认此操作，数据不可恢复！</p>
+    <input type="password" id="clear-password" placeholder="请输入确认密码" maxlength="4" inputmode="numeric" pattern="[0-9]*"
+      class="w-full h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-red-500 mb-3">
+    <div class="flex gap-2">
+      <button id="clear-cancel" class="flex-1 h-11 rounded-lg border border-gray-300 text-gray-600 font-medium text-sm hover:bg-gray-50">取消</button>
+      <button id="clear-confirm-btn" class="flex-1 h-11 rounded-lg bg-danger text-white font-medium text-sm hover:bg-red-700">确认清空</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 全部 JavaScript 逻辑 ==================== -->
+<script src="水表数据_完整导入.js"></script>
+<script>
+'use strict';
+
+// ==================== 工具函数 ====================
+function $(sel) { return document.querySelector(sel); }
+function $$(sel) { return document.querySelectorAll(sel); }
+function genId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 9); }
+function formatMoney(n) { return '¥' + Number(n).toFixed(2); }
+function formatNum(n) { return Number(n).toFixed(2); }
+function getNowMonth() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabel(m) { if (!m) return ''; var parts = m.split('-'); return parts[0] + '年' + parts[1] + '月'; }
+
+function csvEscape(s) {
+  s = String(s || '');
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+// ==================== Store 数据层 ====================
+var STORE_KEYS = { residents: 'wm_residents', readings: 'wm_readings', settings: 'wm_settings' };
+var DEFAULT_SETTINGS = { unitPrice: 3.00, threshold: 50 };
+
+// 地区 → 大区 映射：美厝表里的5个区归地区1，客仔园表里的13个区归地区2，现金单独
+var AREA_REGION = {
+  '美厝':'地区1', '东厝':'地区1', '头厝':'地区1', '美兴里':'地区1', '东兴里':'地区1',
+  '客仔园':'地区2', '自得':'地区2', '堀仔内':'地区2', '山边园寨后园':'地区2', '捷运':'地区2',
+  '乌门楼':'地区2', '书斋堂':'地区2', '铺尾':'地区2', '客连外':'地区2', '粮所':'地区2',
+  '成海楼':'地区2', '东浦沟':'地区2', '山埔':'地区2',
+  '现金':'现金'
+};
+
+// 当前选中的大区筛选（空=全部）
+var residentRegion = '';
+var readingRegion = '';
+var billsRegion = '';
+
+function Store_read(key) {
+  try { return JSON.parse(localStorage.getItem(key)) || null; } catch(e) { return null; }
+}
+function Store_write(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)); return true; } catch(e) { return false; }
+}
+
+var Store = {
+  getResidents: function() { return Store_read(STORE_KEYS.residents) || []; },
+  getResidentById: function(id) { return this.getResidents().find(function(r) { return r.id === id; }) || null; },
+
+  addResident: function(data) {
+    var residents = this.getResidents();
+    if (residents.some(function(r) { return r.houseNumber === data.houseNumber; }))
+      return { ok: false, msg: '户号已存在，请使用不同的户号' };
+    var resident = {
+      id: genId(), houseNumber: data.houseNumber, name: data.name,
+      address: data.address || '', phone: data.phone || '',
+      initialReading: parseFloat(data.initialReading) || 0, createTime: Date.now()
+    };
+    residents.push(resident);
+    if (!Store_write(STORE_KEYS.residents, residents)) return { ok: false, msg: '存储空间不足，请清理旧数据' };
+    return { ok: true, resident: resident };
+  },
+
+  updateResident: function(id, data) {
+    var residents = this.getResidents();
+    var idx = residents.findIndex(function(r) { return r.id === id; });
+    if (idx === -1) return { ok: false, msg: '住户不存在' };
+    if (residents.some(function(r) { return r.houseNumber === data.houseNumber && r.id !== id; }))
+      return { ok: false, msg: '户号已被其他住户使用' };
+    residents[idx] = Object.assign({}, residents[idx], data, { id: id });
+    if (!Store_write(STORE_KEYS.residents, residents)) return { ok: false, msg: '存储空间不足' };
+    return { ok: true, resident: residents[idx] };
+  },
+
+  deleteResident: function(id) {
+    var residents = this.getResidents().filter(function(r) { return r.id !== id; });
+    var readings = Store_read(STORE_KEYS.readings) || [];
+    var filteredReadings = readings.filter(function(r) { return r.userId !== id; });
+    Store_write(STORE_KEYS.residents, residents);
+    Store_write(STORE_KEYS.readings, filteredReadings);
+    return { ok: true };
+  },
+
+  getReadings: function(userId) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    return all.filter(function(r) { return r.userId === userId; }).sort(function(a,b) { return b.month.localeCompare(a.month); });
+  },
+
+  getReadingsByMonth: function(month) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    return all.filter(function(r) { return r.month === month; });
+  },
+
+  getLastReadingBefore: function(userId, month) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    var userReadings = all.filter(function(r) { return r.userId === userId && r.month < month; });
+    userReadings.sort(function(a,b) { return b.month.localeCompare(a.month); });
+    return userReadings[0] || null;
+  },
+
+  getReadingByUserAndMonth: function(userId, month) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    return all.find(function(r) { return r.userId === userId && r.month === month; }) || null;
+  },
+
+  /**
+   * 核心保存逻辑 — 抄表读数保存
+   * @param {string} userId - 住户ID
+   * @param {string} month - 月份 "YYYY-MM"
+   * @param {number} currentReading - 本次读数
+   * @param {boolean} forceSave - 是否强制保存(跳过异常校验)
+   * @returns {{ok, needConfirm?, type?, msg?, record?, isFirstReading?, usage?, totalFee?}}
+   */
+  saveReading: function(userId, month, currentReading, forceSave) {
+    var settings = this.getSettings();
+    var resident = this.getResidentById(userId);
+    if (!resident) return { ok: false, msg: '住户不存在' };
+
+    currentReading = parseFloat(currentReading);
+    if (isNaN(currentReading) || currentReading < 0) return { ok: false, msg: '请输入有效的读数' };
+
+    var allReadings = Store_read(STORE_KEYS.readings) || [];
+    var existingIdx = allReadings.findIndex(function(r) { return r.userId === userId && r.month === month; });
+
+    // 确定上月底数：优先查找本月之前最近一条抄表记录
+    var lastRecord = this.getLastReadingBefore(userId, month);
+    var lastReading = lastRecord ? lastRecord.currentReading : resident.initialReading;
+
+    // 判断是否首次计费
+    var hasHistory = allReadings.some(function(r) { return r.userId === userId; });
+    var isFirstReading = !hasHistory;
+
+    // 异常校验1：读数异常（小于上月底数，等于时视为没用水）
+    if (currentReading < lastReading && !forceSave) {
+      return {
+        ok: false, needConfirm: true, type: 'abnormal',
+        msg: '读数异常：本次读数小于上月底数（' + formatNum(lastReading) + ' 吨），请核对是否抄错、水表是否更换',
+        lastReading: lastReading, currentReading: currentReading
+      };
+    }
+
+    var usage = 0, totalFee = 0;
+    if (!isFirstReading) {
+      usage = Math.max(0, currentReading - lastReading);
+      totalFee = usage * settings.unitPrice;
+    }
+
+    // 异常校验2：高用水量提醒
+    if (usage > settings.threshold && !forceSave) {
+      return {
+        ok: false, needConfirm: true, type: 'highUsage',
+        msg: '本月用水量 ' + formatNum(usage) + ' 吨偏高（阈值 ' + settings.threshold + ' 吨），请确认是否录入正确',
+        lastReading: lastReading, currentReading: currentReading, usage: usage, totalFee: totalFee
+      };
+    }
+
+    var record = {
+      id: existingIdx >= 0 ? allReadings[existingIdx].id : genId(),
+      userId: userId, month: month,
+      lastReading: lastReading, currentReading: currentReading,
+      usage: Math.round(usage * 100) / 100,
+      totalFee: Math.round(totalFee * 100) / 100,
+      isPaid: existingIdx >= 0 ? allReadings[existingIdx].isPaid : false,
+      isFirstReading: isFirstReading, isForced: !!forceSave,
+      createTime: Date.now()
+    };
+
+    if (existingIdx >= 0) { allReadings[existingIdx] = record; }
+    else { allReadings.push(record); }
+
+    if (!Store_write(STORE_KEYS.readings, allReadings)) return { ok: false, msg: '存储空间不足' };
+    return { ok: true, record: record, isFirstReading: isFirstReading, usage: record.usage, totalFee: record.totalFee };
+  },
+
+  togglePaid: function(readingId) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    var idx = all.findIndex(function(r) { return r.id === readingId; });
+    if (idx === -1) return false;
+    all[idx].isPaid = !all[idx].isPaid;
+    Store_write(STORE_KEYS.readings, all);
+    return all[idx].isPaid;
+  },
+
+  updateReadingFee: function(readingId, newFee) {
+    var all = Store_read(STORE_KEYS.readings) || [];
+    var idx = all.findIndex(function(r) { return r.id === readingId; });
+    if (idx === -1) return false;
+    all[idx].totalFee = Math.round(newFee * 100) / 100;
+    Store_write(STORE_KEYS.readings, all);
+    return true;
+  },
+
+  getSettings: function() {
+    var s = Store_read(STORE_KEYS.settings);
+    return Object.assign({}, DEFAULT_SETTINGS, s || {});
+  },
+
+  updateSettings: function(partial) {
+    var current = this.getSettings();
+    return Store_write(STORE_KEYS.settings, Object.assign({}, current, partial));
+  },
+
+  exportAll: function() {
+    return JSON.stringify({
+      version: 1, exportedAt: new Date().toISOString(),
+      residents: this.getResidents(),
+      readings: Store_read(STORE_KEYS.readings) || [],
+      settings: this.getSettings()
+    }, null, 2);
+  },
+
+  importAll: function(jsonStr) {
+    try {
+      var data = JSON.parse(jsonStr);
+      if (!data || !Array.isArray(data.residents) || !Array.isArray(data.readings)) {
+        return { ok: false, msg: '文件格式不正确，缺少必要数据' };
+      }
+      if (!Store_write(STORE_KEYS.residents, data.residents)) return { ok: false, msg: '存储空间不足' };
+      if (!Store_write(STORE_KEYS.readings, data.readings)) return { ok: false, msg: '存储空间不足' };
+      if (data.settings) Store_write(STORE_KEYS.settings, data.settings);
+      return { ok: true, count: { residents: data.residents.length, readings: data.readings.length } };
+    } catch(e) {
+      return { ok: false, msg: '文件格式不正确：' + e.message };
+    }
+  },
+
+  clearAll: function() {
+    localStorage.removeItem(STORE_KEYS.residents);
+    localStorage.removeItem(STORE_KEYS.readings);
+    localStorage.removeItem(STORE_KEYS.settings);
+  },
+
+  _read: Store_read
+};
+
+// ==================== Toast 消息 ====================
+var toastTimer;
+function showToast(msg, type) {
+  var el = $('#toast');
+  clearTimeout(toastTimer);
+  el.className = 'toast ' + type + ' show';
+  el.textContent = msg;
+  toastTimer = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+// ==================== 确认对话框 ====================
+var confirmCallback = null;
+function showConfirm(icon, msg, okText, okClass, callback) {
+  $('#confirm-icon').textContent = icon;
+  $('#confirm-msg').textContent = msg;
+  var okBtn = $('#confirm-ok');
+  okBtn.textContent = okText || '确认';
+  okBtn.className = 'flex-1 h-11 rounded-lg text-white font-medium text-sm ' + (okClass || 'bg-primary hover:bg-blue-700');
+  $('#confirm-overlay').classList.add('show');
+  confirmCallback = callback;
+}
+function hideConfirm() {
+  $('#confirm-overlay').classList.remove('show');
+  confirmCallback = null;
+}
+$('#confirm-cancel').addEventListener('click', hideConfirm);
+$('#confirm-ok').addEventListener('click', function() {
+  hideConfirm();
+  if (confirmCallback) confirmCallback();
+});
+$('#confirm-overlay').addEventListener('click', function(e) {
+  if (e.target === this) hideConfirm();
+});
+
+// ==================== 清空数据对话框 ====================
+function showClearConfirm() {
+  $('#clear-password').value = '';
+  $('#clear-confirm-overlay').classList.add('show');
+  setTimeout(function() { $('#clear-password').focus(); }, 100);
+}
+function hideClearConfirm() {
+  $('#clear-confirm-overlay').classList.remove('show');
+}
+$('#clear-cancel').addEventListener('click', hideClearConfirm);
+$('#clear-confirm-btn').addEventListener('click', function() {
+  if ($('#clear-password').value === '0000') {
+    Store.clearAll();
+    hideClearConfirm();
+    showToast('全部数据已清空', 'success');
+    refreshAllViews();
+  } else {
+    showToast('密码错误，操作取消', 'error');
+    hideClearConfirm();
+  }
+});
+$('#clear-confirm-overlay').addEventListener('click', function(e) {
+  if (e.target === this) hideClearConfirm();
+});
+
+// ==================== 模态框 ====================
+function showModal(html) {
+  $('#modal-content').innerHTML = html;
+  $('#modal-overlay').classList.add('show');
+}
+function hideModal() {
+  $('#modal-overlay').classList.remove('show');
+}
+$('#modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) hideModal();
+});
+
+// ==================== Tab 导航 ====================
+var currentView = 'residents';
+function switchView(viewName) {
+  currentView = viewName;
+  $$('.view').forEach(function(v) { v.classList.remove('active'); });
+  var target = $('#view-' + viewName);
+  if (target) target.classList.add('active');
+  $$('.tab-btn').forEach(function(btn) {
+    var dv = btn.getAttribute('data-view');
+    if (dv === viewName) { btn.classList.add('text-primary'); btn.classList.remove('text-gray-400'); }
+    else { btn.classList.remove('text-primary'); btn.classList.add('text-gray-400'); }
+  });
+  // 切换到住户或抄表视图时重建地区索引
+  if (viewName === 'residents') {
+    buildAreaIndex();
+    buildSubAreaBar('resident', residentRegion, ($('#resident-search').value || ''));
+  } else if (viewName === 'reading') {
+    buildAreaIndex();
+    buildSubAreaBar('reading', readingRegion, ($('#reading-search').value || ''));
+  } else if (viewName === 'bills') {
+    buildAreaIndex();
+    buildSubAreaBar('bills', billsRegion, '');
+  }
+  refreshView(viewName);
+  updateHeaderMonth();
+}
+$$('.tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() { switchView(this.getAttribute('data-view')); });
+});
+
+function updateHeaderMonth() {
+  var m = '';
+  if (currentView === 'reading') m = monthLabel($('#reading-month').value);
+  else if (currentView === 'bills') m = monthLabel($('#bills-month').value);
+  $('#header-month').textContent = m;
+}
+
+function refreshView(viewName) {
+  switch(viewName) {
+    case 'residents': renderResidentList(); break;
+    case 'reading': renderReadingView(); break;
+    case 'bills': renderBillsView(); break;
+    case 'export': initExportView(); break;
+    case 'settings': initSettingsView(); break;
+  }
+}
+
+function refreshAllViews() { refreshView(currentView); }
+
+// ==================== 大区 + 子地区索引条 ====================
+function buildAreaIndex() {
+  var residents = Store.getResidents();
+  // 统计每个大区的住户数
+  var regionMap = { '地区1': 0, '地区2': 0, '现金': 0 };
+  residents.forEach(function(r) {
+    var region = AREA_REGION[r.address] || '其他';
+    if (!regionMap[region]) regionMap[region] = 0;
+    regionMap[region]++;
+  });
+  var total = residents.length;
+
+  // 生成大区 chip HTML（按固定顺序）
+  var order = ['地区1', '地区2', '现金'];
+  var html = '<span class="area-chip active" data-region="">全部（' + total + '）</span>';
+  order.forEach(function(reg) {
+    if (regionMap[reg]) {
+      html += '<span class="area-chip" data-region="' + reg + '">' + reg + '（' + regionMap[reg] + '）</span>';
+    }
+  });
+  Object.keys(regionMap).sort().forEach(function(reg) {
+    if (order.indexOf(reg) === -1) {
+      html += '<span class="area-chip" data-region="' + reg + '">' + reg + '（' + regionMap[reg] + '）</span>';
+    }
+  });
+
+  $('#resident-area-index').innerHTML = html;
+  $('#reading-area-index').innerHTML = html;
+  $('#bills-area-index').innerHTML = html;
+}
+
+// 获取某大区下的子地区列表（含计数）
+function getSubAreas(region) {
+  var areas = {};
+  Store.getResidents().forEach(function(r) {
+    if ((AREA_REGION[r.address] || '其他') === region) {
+      var a = r.address || '未分类';
+      areas[a] = (areas[a] || 0) + 1;
+    }
+  });
+  return areas;
+}
+
+// 构建子地区条
+function buildSubAreaBar(viewPrefix, region, activeSubArea) {
+  var container = document.getElementById(viewPrefix + '-subarea-index');
+  if (!container) return;
+
+  if (!region) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+
+  var areas = getSubAreas(region);
+  var sorted = Object.keys(areas).sort();
+  var total = 0;
+  sorted.forEach(function(a) { total += areas[a]; });
+
+  var html = '<span class="area-chip sub-chip' + (activeSubArea === '' ? ' active' : '') + '" data-subarea="">' + region + '全部（' + total + '）</span>';
+  sorted.forEach(function(a) {
+    html += '<span class="area-chip sub-chip' + (activeSubArea === a ? ' active' : '') + '" data-subarea="' + escHtml(a) + '">' + escHtml(a) + '（' + areas[a] + '）</span>';
+  });
+
+  container.innerHTML = html;
+  container.classList.remove('hidden');
+}
+
+// 同步大区 chip 激活状态
+function syncRegionChips(containerId, region) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.area-chip').forEach(function(c) {
+    var r = c.getAttribute('data-region');
+    c.classList.toggle('active', r === region || (r === '' && !region));
+  });
+}
+
+// ===== 住户管理 — 大区索引点击 =====
+$('#resident-area-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  residentRegion = chip.getAttribute('data-region') || '';
+  suppressSearchInput = true;
+  $('#resident-search').value = '';
+  suppressSearchInput = false;
+  buildSubAreaBar('resident', residentRegion, '');
+  renderResidentList('');
+});
+
+// ===== 住户管理 — 子地区索引点击 =====
+$('#resident-subarea-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  var subArea = chip.getAttribute('data-subarea') || '';
+  suppressSearchInput = true;
+  $('#resident-search').value = subArea;
+  suppressSearchInput = false;
+  buildSubAreaBar('resident', residentRegion, subArea);
+  renderResidentList(subArea);
+});
+
+// ===== 抄表录入 — 大区索引点击 =====
+$('#reading-area-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  readingRegion = chip.getAttribute('data-region') || '';
+  suppressSearchInput = true;
+  $('#reading-search').value = '';
+  suppressSearchInput = false;
+  buildSubAreaBar('reading', readingRegion, '');
+  renderReadingResidentList('');
+});
+
+// ===== 抄表录入 — 子地区索引点击 =====
+$('#reading-subarea-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  var subArea = chip.getAttribute('data-subarea') || '';
+  suppressSearchInput = true;
+  $('#reading-search').value = subArea;
+  suppressSearchInput = false;
+  buildSubAreaBar('reading', readingRegion, subArea);
+  renderReadingResidentList(subArea);
+});
+
+// ===== 账单查询 — 大区索引点击 =====
+$('#bills-area-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  billsRegion = chip.getAttribute('data-region') || '';
+  buildSubAreaBar('bills', billsRegion, '');
+  renderBillsView();
+});
+
+// ===== 账单查询 — 子地区索引点击 =====
+$('#bills-subarea-index').addEventListener('click', function(e) {
+  var chip = e.target.closest('.area-chip');
+  if (!chip) return;
+  var subArea = chip.getAttribute('data-subarea') || '';
+  buildSubAreaBar('bills', billsRegion, subArea);
+  renderBillsView(subArea);
+});
+
+// ==================== 视图1: 住户管理 ====================
+function renderResidentList(searchTerm) {
+  var residents = Store.getResidents();
+  var listEl = $('#resident-list');
+  var emptyEl = $('#resident-empty');
+  var region = residentRegion || '';
+  syncRegionChips('resident-area-index', region);
+
+  // 先按大区筛选
+  if (region) {
+    residents = residents.filter(function(r) {
+      return (AREA_REGION[r.address] || '其他') === region;
+    });
+  }
+
+  // 搜索框为空且没有选大区时不渲染列表，避免大量 DOM 节点导致卡顿
+  if ((!searchTerm || searchTerm.trim() === '') && !region) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    var total = Store.getResidents().length;
+    if (total === 0) {
+      $('#resident-empty-icon').textContent = '📋';
+      $('#resident-empty-text').textContent = '暂无住户信息';
+      $('#resident-empty-hint').textContent = '点击右上角「＋ 新增」添加住户';
+    } else {
+      $('#resident-empty-icon').textContent = '🔍';
+      $('#resident-empty-text').textContent = '共 ' + total + ' 户住户';
+      $('#resident-empty-hint').textContent = '点击上方地区标签筛选，或输入关键词搜索';
+    }
+    return;
+  }
+
+  // 搜索过滤
+  if (searchTerm && searchTerm.trim()) {
+    var s = searchTerm.toLowerCase();
+    residents = residents.filter(function(r) {
+      return r.houseNumber.toLowerCase().includes(s) ||
+             r.name.toLowerCase().includes(s) ||
+             (r.address || '').toLowerCase().includes(s);
+    });
+  }
+
+  if (residents.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    $('#resident-empty-icon').textContent = '😕';
+    $('#resident-empty-text').textContent = '未找到匹配的住户';
+    $('#resident-empty-hint').textContent = '请尝试其他关键词';
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+
+  // 仅选了大区但没有搜索词/子地区 → 显示子地区摘要卡片（可点击进入）
+  if (region && (!searchTerm || !searchTerm.trim())) {
+    var rg = {};
+    residents.forEach(function(r) {
+      var area = r.address || '未分类';
+      rg[area] = (rg[area] || 0) + 1;
+    });
+    var sortedAreas = Object.keys(rg).sort();
+    listEl.innerHTML =
+      '<div class="text-sm font-bold text-white bg-primary rounded-lg px-3 py-2 mb-2 flex items-center justify-between">' +
+        '<span>🏘 ' + escHtml(region) + '</span>' +
+        '<span class="font-normal text-blue-100">' + residents.length + ' 户</span>' +
+      '</div>' +
+      sortedAreas.map(function(area) {
+        return '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer active:bg-blue-50" data-subarea-nav="' + escHtml(area) + '">' +
+          '<div class="flex-1 min-w-0">' +
+            '<span class="font-bold text-sm text-gray-800">📍 ' + escHtml(area) + '</span>' +
+          '</div>' +
+          '<div class="text-sm font-bold text-primary">' + rg[area] + ' 户</div>' +
+          '<div class="ml-2 text-gray-300 text-lg">›</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="text-center text-xs text-gray-400 mt-2">点击子地区查看住户，或在上方搜索框输入户号/姓名</div>';
+    return;
+  }
+
+  // 有搜索词或子地区筛选 → 渲染单个住户卡片
+  // 两层分组：先按大区，再按子区
+  var regionGroups = {};
+  residents.forEach(function(r) {
+    var reg = AREA_REGION[r.address] || '其他';
+    var area = r.address || '未分类';
+    if (!regionGroups[reg]) regionGroups[reg] = {};
+    if (!regionGroups[reg][area]) regionGroups[reg][area] = [];
+    regionGroups[reg][area].push(r);
+  });
+  var regionOrder = ['地区1', '地区2', '现金'];
+  var regions = Object.keys(regionGroups).sort(function(a, b) {
+    var ia = regionOrder.indexOf(a), ib = regionOrder.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1; if (ib >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  listEl.innerHTML = regions.map(function(reg) {
+    var areaGroups = regionGroups[reg];
+    var areas = Object.keys(areaGroups).sort();
+    var regTotal = 0;
+    areas.forEach(function(a) { regTotal += areaGroups[a].length; });
+
+    var regHeader = region ? '' :
+      '<div class="text-sm font-bold text-white bg-primary rounded-lg px-3 py-2 mt-3 mb-1 flex items-center justify-between">' +
+        '<span>🏘 ' + escHtml(reg) + '</span>' +
+        '<span class="font-normal text-blue-100">' + regTotal + ' 户</span>' +
+      '</div>';
+
+    return regHeader + areas.map(function(area) {
+      var grp = areaGroups[area];
+      grp.sort(naturalSort);
+      return '<div class="area-group-header text-xs font-bold text-blue-800 rounded-lg px-3 py-1.5 mt-2 mb-1 flex items-center justify-between">' +
+        '<span>📍 ' + escHtml(area) + '</span>' +
+        '<span class="font-normal text-blue-600">' + grp.length + ' 户</span>' +
+      '</div>' +
+      grp.map(function(r) {
+        return '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 flex items-center justify-between active:bg-gray-50">' +
+          '<div class="flex-1 min-w-0 cursor-pointer" data-action="edit" data-id="' + r.id + '">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="font-bold text-sm">' + escHtml(r.houseNumber) + '</span>' +
+              '<span class="text-sm text-gray-700">' + escHtml(r.name) + '</span>' +
+            '</div>' +
+            '<div class="text-xs text-gray-400 mt-0.5">' + escHtml(r.address || '--') + ' | ' + escHtml(r.phone || '--') + '</div>' +
+          '</div>' +
+          '<div class="flex gap-1 ml-2">' +
+            '<button class="w-8 h-8 flex items-center justify-center rounded text-blue-500 hover:bg-blue-50 text-xs" data-action="edit" data-id="' + r.id + '">✎</button>' +
+            '<button class="w-8 h-8 flex items-center justify-center rounded text-red-500 hover:bg-red-50 text-xs" data-action="delete" data-id="' + r.id + '">✕</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }).join('');
+  }).join('');
+}
+
+// 事件委托：编辑/删除住户
+$('#resident-list').addEventListener('click', function(e) {
+  // 点击子地区摘要卡片 → 进入该子地区
+  var navCard = e.target.closest('[data-subarea-nav]');
+  if (navCard) {
+    var area = navCard.getAttribute('data-subarea-nav');
+    suppressSearchInput = true;
+    $('#resident-search').value = area;
+    suppressSearchInput = false;
+    buildSubAreaBar('resident', residentRegion, area);
+    renderResidentList(area);
+    return;
+  }
+  // 编辑/删除按钮
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  var action = btn.getAttribute('data-action');
+  var id = btn.getAttribute('data-id');
+  if (action === 'edit') openAddResidentModal(Store.getResidentById(id));
+  else if (action === 'delete') deleteResidentConfirm(id);
+});
+
+function escHtml(str) {
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// 自然排序：按户号中的数字大小排序（如 美厝-1 < 美厝-2 < 美厝-10）
+function naturalSort(a, b) {
+  var ha = a.houseNumber || '';
+  var hb = b.houseNumber || '';
+  var ma = ha.match(/^(.*?)-?(\d+)$/);
+  var mb = hb.match(/^(.*?)-?(\d+)$/);
+  if (ma && mb) {
+    var cmp = ma[1].localeCompare(mb[1]);
+    if (cmp !== 0) return cmp;
+    return parseInt(ma[2], 10) - parseInt(mb[2], 10);
+  }
+  return ha.localeCompare(hb);
+}
+
+function openAddResidentModal(resident) {
+  var isEdit = !!resident;
+  var title = isEdit ? '编辑住户' : '新增住户';
+  var data = resident || { houseNumber:'', name:'', address:'', phone:'', initialReading:'' };
+
+  var html = '<div class="p-5">' +
+    '<h3 class="text-lg font-bold mb-4">' + title + '</h3>' +
+    '<div class="space-y-3">' +
+      '<div><label class="block text-xs text-gray-500 mb-1">户号 <span class="text-red-500">*</span></label>' +
+      '<input id="mf-hn" class="w-full h-11 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value="' + escHtml(data.houseNumber) + '" placeholder="必填，唯一"></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">住户姓名 <span class="text-red-500">*</span></label>' +
+      '<input id="mf-name" class="w-full h-11 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value="' + escHtml(data.name) + '" placeholder="必填"></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">房号/住址</label>' +
+      '<input id="mf-addr" class="w-full h-11 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value="' + escHtml(data.address||'') + '" placeholder="如：1栋101室"></div>' +
+      '<div><label class="block text-xs text-gray-500 mb-1">联系电话</label>' +
+      '<input id="mf-phone" class="w-full h-11 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value="' + escHtml(data.phone||'') + '" placeholder="选填"></div>' +
+      (isEdit ? '' : '<div><label class="block text-xs text-gray-500 mb-1">初始水表底数 <span class="text-red-500">*</span></label>' +
+      '<input id="mf-init" type="number" inputmode="decimal" min="0" step="0.01" class="w-full h-11 px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary" value="' + data.initialReading + '" placeholder="首次建档时的水表读数"></div>') +
+    '</div>' +
+    '<div class="flex gap-2 mt-5">' +
+      '<button id="mf-cancel" class="flex-1 h-11 rounded-lg border border-gray-300 text-gray-600 font-medium text-sm">取消</button>' +
+      '<button id="mf-save" class="flex-1 h-11 rounded-lg bg-primary text-white font-medium text-sm">保存</button>' +
+    '</div>' +
+  '</div>';
+
+  showModal(html);
+
+  $('#mf-cancel').addEventListener('click', hideModal);
+  $('#mf-save').addEventListener('click', function() {
+    var formData = {
+      houseNumber: $('#mf-hn').value.trim(),
+      name: $('#mf-name').value.trim(),
+      address: $('#mf-addr').value.trim(),
+      phone: $('#mf-phone').value.trim()
+    };
+    if (!isEdit) { formData.initialReading = parseFloat($('#mf-init').value) || 0; }
+
+    if (!formData.houseNumber) { showToast('请输入户号', 'error'); return; }
+    if (!formData.name) { showToast('请输入住户姓名', 'error'); return; }
+    if (!isEdit && formData.initialReading < 0) { showToast('初始底数不能为负数', 'error'); return; }
+
+    var result = isEdit ? Store.updateResident(resident.id, formData) : Store.addResident(formData);
+    if (result.ok) {
+      hideModal();
+      showToast(isEdit ? '住户信息已更新' : '住户添加成功', 'success');
+      renderResidentList($('#resident-search').value);
+      if (currentView === 'reading') renderReadingResidentList();
+    } else {
+      showToast(result.msg, 'error');
+    }
+  });
+}
+
+function deleteResidentConfirm(id) {
+  var r = Store.getResidentById(id);
+  if (!r) return;
+  showConfirm('🗑️', '确定删除住户「' + r.houseNumber + ' ' + r.name + '」吗？\n该住户的所有抄表记录也将同步删除。', '确认删除', 'bg-danger hover:bg-red-700', function() {
+    Store.deleteResident(id);
+    showToast('住户已删除', 'success');
+    refreshAllViews();
+  });
+}
+
+$('#resident-search').addEventListener('input', function() {
+  if (suppressSearchInput) return;
+  // 用户手动输入搜索时清除大区和子地区筛选
+  if (this.value.trim()) { residentRegion = ''; buildSubAreaBar('resident', '', ''); }
+  renderResidentList(this.value);
+});
+$('#btn-add-resident').addEventListener('click', function() { openAddResidentModal(null); });
+
+// ==================== 视图2: 抄表录入（核心模块） ====================
+var readingCurrentUserId = null;
+var suppressSearchInput = false;
+var readingPendingSave = null;
+
+function renderReadingView() {
+  renderReadingResidentList();
+  updateReadingProgress();
+  updateHeaderMonth();
+}
+
+function renderReadingResidentList(searchTerm) {
+  var residents = Store.getResidents();
+  var listEl = $('#reading-resident-list');
+  var emptyEl = $('#reading-list-empty');
+  var month = $('#reading-month').value;
+  var region = readingRegion || '';
+  syncRegionChips('reading-area-index', region);
+
+  // 先按大区筛选
+  if (region) {
+    residents = residents.filter(function(r) {
+      return (AREA_REGION[r.address] || '其他') === region;
+    });
+  }
+
+  // 搜索框为空且没有选大区时不渲染列表，避免大量 DOM 节点导致卡顿
+  if ((!searchTerm || searchTerm.trim() === '') && !region) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    var total = Store.getResidents().length;
+    if (total === 0) {
+      $('#reading-empty-icon').textContent = '📋';
+      $('#reading-empty-text').textContent = '暂无住户，请先到「住户管理」添加';
+      $('#reading-empty-hint').textContent = '';
+    } else {
+      var readings = Store.getReadingsByMonth(month);
+      var doneSet = {};
+      readings.forEach(function(r) { doneSet[r.userId] = true; });
+      var done = Object.keys(doneSet).length;
+      $('#reading-empty-icon').textContent = '🔍';
+      $('#reading-empty-text').textContent = '共 ' + total + ' 户（已抄 ' + done + ' 户）';
+      $('#reading-empty-hint').textContent = '点击上方地区标签筛选，或输入关键词搜索';
+    }
+    return;
+  }
+
+  // 搜索过滤
+  if (searchTerm && searchTerm.trim()) {
+    var s = searchTerm.toLowerCase();
+    residents = residents.filter(function(r) {
+      return r.houseNumber.toLowerCase().includes(s) ||
+             r.name.toLowerCase().includes(s) ||
+             (r.address || '').toLowerCase().includes(s);
+    });
+  }
+
+  if (residents.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    $('#reading-empty-icon').textContent = '😕';
+    $('#reading-empty-text').textContent = '未找到匹配的住户';
+    $('#reading-empty-hint').textContent = '请尝试其他关键词';
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+
+  // 仅选了大区但没有搜索词/子地区 → 显示子地区摘要卡片（可点击进入）
+  if (region && (!searchTerm || !searchTerm.trim())) {
+    // 两层分组统计
+    var rg = {};
+    residents.forEach(function(r) {
+      var area = r.address || '未分类';
+      if (!rg[area]) rg[area] = { total: 0, done: 0 };
+      rg[area].total++;
+      if (Store.getReadingByUserAndMonth(r.id, month)) rg[area].done++;
+    });
+    var sortedAreas = Object.keys(rg).sort();
+    listEl.innerHTML =
+      '<div class="text-sm font-bold text-white bg-primary rounded-lg px-3 py-2 mb-2 flex items-center justify-between">' +
+        '<span>🏘 ' + escHtml(region) + '</span>' +
+        '<span class="font-normal text-blue-100">' + residents.length + ' 户</span>' +
+      '</div>' +
+      sortedAreas.map(function(area) {
+        var info = rg[area];
+        var pct = info.total > 0 ? Math.round(info.done / info.total * 100) : 0;
+        return '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer active:bg-blue-50" data-subarea-nav="' + escHtml(area) + '">' +
+          '<div class="flex-1 min-w-0">' +
+            '<div class="font-bold text-sm text-gray-800">📍 ' + escHtml(area) + '</div>' +
+            '<div class="w-full bg-gray-200 rounded-full h-1.5 mt-1.5">' +
+              '<div class="bg-primary h-1.5 rounded-full transition-all" style="width:' + pct + '%"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ml-3 text-right">' +
+            '<div class="text-sm font-bold ' + (info.done >= info.total ? 'text-green-600' : 'text-primary') + '">' + info.done + '/' + info.total + '</div>' +
+            '<div class="text-xs text-gray-400">已抄</div>' +
+          '</div>' +
+          '<div class="ml-2 text-gray-300 text-lg">›</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="text-center text-xs text-gray-400 mt-2">点击子地区进入抄表，或在上方搜索框输入户号/姓名</div>';
+    return;
+  }
+
+  // 有搜索词或子地区筛选 → 渲染单个住户卡片
+  // 两层分组：先按大区，再按子区
+  var regionGroups = {};
+  residents.forEach(function(r) {
+    var reg = AREA_REGION[r.address] || '其他';
+    var area = r.address || '未分类';
+    if (!regionGroups[reg]) regionGroups[reg] = {};
+    if (!regionGroups[reg][area]) regionGroups[reg][area] = [];
+    regionGroups[reg][area].push(r);
+  });
+  var regionOrder = ['地区1', '地区2', '现金'];
+  var regions = Object.keys(regionGroups).sort(function(a, b) {
+    var ia = regionOrder.indexOf(a), ib = regionOrder.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1; if (ib >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  listEl.innerHTML = regions.map(function(reg) {
+    var areaGroups = regionGroups[reg];
+    var areas = Object.keys(areaGroups).sort();
+    var regTotal = 0;
+    areas.forEach(function(a) { regTotal += areaGroups[a].length; });
+
+    var regHeader = region ? '' :
+      '<div class="text-sm font-bold text-white bg-primary rounded-lg px-3 py-2 mt-3 mb-1 flex items-center justify-between">' +
+        '<span>🏘 ' + escHtml(reg) + '</span>' +
+        '<span class="font-normal text-blue-100">' + regTotal + ' 户</span>' +
+      '</div>';
+
+    return regHeader + areas.map(function(area) {
+      var grp = areaGroups[area];
+      grp.sort(naturalSort);
+      var doneCount = 0;
+      grp.forEach(function(r) {
+        if (Store.getReadingByUserAndMonth(r.id, month)) doneCount++;
+      });
+      return '<div class="area-group-header text-xs font-bold text-blue-800 rounded-lg px-3 py-1.5 mt-2 mb-1 flex items-center justify-between">' +
+        '<span>📍 ' + escHtml(area) + '</span>' +
+        '<span class="font-normal text-blue-600">' + doneCount + '/' + grp.length + '</span>' +
+      '</div>' +
+      grp.map(function(r) {
+        var existing = Store.getReadingByUserAndMonth(r.id, month);
+        var statusHtml;
+        if (existing) {
+          statusHtml = '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">已抄：' + formatNum(existing.currentReading) + ' 吨</span>';
+        } else {
+          statusHtml = '<span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">待抄</span>';
+        }
+        return '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer active:bg-blue-50" data-reading-user="' + r.id + '">' +
+          '<div class="flex-1 min-w-0">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="font-bold text-sm">' + escHtml(r.houseNumber) + '</span>' +
+              '<span class="text-sm text-gray-700">' + escHtml(r.name) + '</span>' +
+            '</div>' +
+            '<div class="text-xs text-gray-400 mt-0.5">' + escHtml(r.address || '--') + '</div>' +
+          '</div>' +
+          '<div class="ml-2">' + statusHtml + '</div>' +
+        '</div>';
+      }).join('');
+    }).join('');
+  }).join('');
+}
+
+// 事件委托：点击住户进入录入
+$('#reading-resident-list').addEventListener('click', function(e) {
+  // 点击子地区摘要卡片 → 进入该子地区
+  var navCard = e.target.closest('[data-subarea-nav]');
+  if (navCard) {
+    var area = navCard.getAttribute('data-subarea-nav');
+    suppressSearchInput = true;
+    $('#reading-search').value = area;
+    suppressSearchInput = false;
+    buildSubAreaBar('reading', readingRegion, area);
+    renderReadingResidentList(area);
+    return;
+  }
+  // 点击住户卡片 → 进入抄表
+  var card = e.target.closest('[data-reading-user]');
+  if (card) startReadingEntry(card.getAttribute('data-reading-user'));
+});
+
+function updateReadingProgress() {
+  var month = $('#reading-month').value;
+  var residents = Store.getResidents();
+  var total = residents.length;
+  var readings = Store.getReadingsByMonth(month);
+  var doneSet = {};
+  readings.forEach(function(r) { doneSet[r.userId] = true; });
+  var done = Object.keys(doneSet).length;
+  $('#reading-progress').textContent = done + '/' + total + ' 户';
+  var pct = total > 0 ? Math.round(done / total * 100) : 0;
+  $('#reading-progress-bar').style.width = pct + '%';
+}
+
+function startReadingEntry(userId) {
+  readingCurrentUserId = userId;
+  var resident = Store.getResidentById(userId);
+  if (!resident) return;
+
+  var month = $('#reading-month').value;
+  var lastRecord = Store.getLastReadingBefore(userId, month);
+  var lastReading = lastRecord ? lastRecord.currentReading : resident.initialReading;
+  var existing = Store.getReadingByUserAndMonth(userId, month);
+  var allReadings = Store._read('wm_readings') || [];
+  var isFirst = !allReadings.some(function(r) { return r.userId === userId; });
+
+  $('#entry-name').textContent = resident.houseNumber + ' ' + resident.name;
+  $('#entry-info').textContent = (resident.address || '') + (resident.phone ? ' | ' + resident.phone : '');
+  $('#entry-last-reading').textContent = formatNum(lastReading) + ' 吨';
+  $('#entry-current-reading').value = existing ? existing.currentReading : '';
+
+  $('#entry-current-reading').dataset.lastReading = lastReading;
+  $('#entry-current-reading').dataset.isFirst = isFirst ? '1' : '0';
+  // 触发现场计算
+  triggerCalc();
+
+  if (isFirst) { $('#entry-first-notice').classList.remove('hidden'); }
+  else { $('#entry-first-notice').classList.add('hidden'); }
+
+  $('#reading-list-mode').classList.add('hidden');
+  $('#reading-entry-mode').classList.remove('hidden');
+
+  setTimeout(function() {
+    $('#entry-current-reading').focus();
+    $('#entry-current-reading').select();
+  }, 150);
+}
+
+// 实时计算用水量和水费
+function triggerCalc() {
+  var input = $('#entry-current-reading');
+  var val = parseFloat(input.value);
+  var lastReading = parseFloat(input.dataset.lastReading || 0);
+  var isFirst = input.dataset.isFirst === '1';
+  var settings = Store.getSettings();
+
+  if (isNaN(val) || val < 0) {
+    $('#entry-usage').textContent = '-- 吨';
+    $('#entry-fee').textContent = '--';
+    return;
+  }
+  if (isFirst) {
+    $('#entry-usage').textContent = '0.00 吨（首次建档）';
+    $('#entry-fee').textContent = '¥0.00';
+  } else {
+    var usage = Math.max(0, val - lastReading);
+    var fee = usage * settings.unitPrice;
+    $('#entry-usage').textContent = formatNum(usage) + ' 吨';
+    $('#entry-fee').textContent = formatMoney(fee);
+  }
+}
+
+$('#entry-current-reading').addEventListener('input', triggerCalc);
+
+// 保存并下一户
+$('#btn-save-reading').addEventListener('click', function() {
+  if (!readingCurrentUserId) return;
+  var month = $('#reading-month').value;
+  var currentReading = parseFloat($('#entry-current-reading').value);
+
+  if (isNaN(currentReading) || currentReading < 0) {
+    showToast('请输入有效的读数', 'error');
+    $('#entry-current-reading').focus();
+    return;
+  }
+
+  var result = Store.saveReading(readingCurrentUserId, month, currentReading, false);
+
+  if (result.ok) {
+    if (result.isFirstReading) {
+      showToast('首次建档成功，本次读数已记录为初始底数', 'success');
+    } else {
+      showToast('抄表保存成功！用水量 ' + formatNum(result.usage) + ' 吨，水费 ' + formatMoney(result.totalFee), 'success');
+    }
+    moveToNextResident();
+  } else if (result.needConfirm) {
+    readingPendingSave = { userId: readingCurrentUserId, month: month, currentReading: currentReading, forceSave: true };
+    if (result.type === 'abnormal') {
+      showConfirm('🚨', result.msg, '强制保存', 'bg-danger hover:bg-red-700', function() { doForceSave(); });
+    } else if (result.type === 'highUsage') {
+      showConfirm('⚠️', result.msg, '确认保存', 'bg-warn hover:bg-amber-600', function() { doForceSave(); });
+    }
+  } else {
+    showToast(result.msg, 'error');
+  }
+});
+
+function doForceSave() {
+  if (!readingPendingSave) return;
+  var p = readingPendingSave;
+  var result = Store.saveReading(p.userId, p.month, p.currentReading, true);
+  readingPendingSave = null;
+  if (result.ok) { showToast('已强制保存', 'success'); moveToNextResident(); }
+  else { showToast(result.msg, 'error'); }
+}
+
+function moveToNextResident() {
+  var residents = Store.getResidents();
+  residents.sort(naturalSort);
+  var currentIdx = residents.findIndex(function(r) { return r.id === readingCurrentUserId; });
+  var nextIdx = currentIdx + 1;
+
+  $('#reading-list-mode').classList.remove('hidden');
+  $('#reading-entry-mode').classList.add('hidden');
+  readingCurrentUserId = null;
+
+  renderReadingResidentList($('#reading-search').value);
+  updateReadingProgress();
+
+  if (nextIdx < residents.length) {
+    setTimeout(function() { startReadingEntry(residents[nextIdx].id); }, 200);
+  } else {
+    showToast('🎉 本月所有住户抄表完成！', 'success');
+  }
+}
+
+$('#btn-reading-back').addEventListener('click', function() {
+  $('#reading-list-mode').classList.remove('hidden');
+  $('#reading-entry-mode').classList.add('hidden');
+  readingCurrentUserId = null;
+  renderReadingResidentList($('#reading-search').value);
+  updateReadingProgress();
+});
+
+$('#reading-month').addEventListener('change', function() { renderReadingView(); });
+$('#reading-search').addEventListener('input', function() {
+  if (suppressSearchInput) return;
+  // 用户手动输入搜索时清除大区和子地区筛选
+  if (this.value.trim()) { readingRegion = ''; buildSubAreaBar('reading', '', ''); }
+  renderReadingResidentList(this.value);
+});
+
+// ==================== 视图3: 账单查询 ====================
+function renderBillsView(subArea) {
+  var month = $('#bills-month').value;
+  var filter = $('#bills-filter').value;
+  var readings = Store.getReadingsByMonth(month);
+  var residentsMap = {};
+  Store.getResidents().forEach(function(r) { residentsMap[r.id] = r; });
+
+  if (filter === 'paid') readings = readings.filter(function(r) { return r.isPaid; });
+  else if (filter === 'unpaid') readings = readings.filter(function(r) { return !r.isPaid; });
+  else if (filter === 'highUsage') {
+    var threshold = Store.getSettings().threshold;
+    readings = readings.filter(function(r) { return !r.isFirstReading && r.usage > threshold; });
+  }
+
+  // 大区/子地区筛选
+  if (billsRegion) {
+    readings = readings.filter(function(r) {
+      var resident = residentsMap[r.userId] || {};
+      return (AREA_REGION[resident.address] || '其他') === billsRegion;
+    });
+  }
+  if (subArea) {
+    readings = readings.filter(function(r) {
+      var resident = residentsMap[r.userId] || {};
+      return (resident.address || '') === subArea;
+    });
+  }
+
+  readings.sort(function(a,b) {
+    return naturalSort(
+      {houseNumber: (residentsMap[a.userId] || {}).houseNumber || ''},
+      {houseNumber: (residentsMap[b.userId] || {}).houseNumber || ''}
+    );
+  });
+
+  var totalUsage = 0, totalFee = 0;
+  readings.forEach(function(r) {
+    if (!r.isFirstReading) { totalUsage += r.usage || 0; totalFee += r.totalFee || 0; }
+  });
+
+  $('#bills-count').textContent = readings.length;
+  $('#bills-total-usage').textContent = formatNum(totalUsage) + ' 吨';
+  $('#bills-total-fee').textContent = formatMoney(totalFee);
+
+  // 同步大区 chip 激活状态
+  syncRegionChips('bills-area-index', billsRegion);
+
+  var listEl = $('#bills-list');
+  var emptyEl = $('#bills-empty');
+
+  if (readings.length === 0) {
+    listEl.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    updateHeaderMonth();
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+
+  // 第1层：未选大区也未选子地区 → 显示大区摘要卡片，避免渲染全部账单
+  if (!billsRegion && !subArea) {
+    var regionOrder = ['地区1', '地区2', '现金'];
+    var regionHtml = '';
+    regionOrder.forEach(function(reg) {
+      var regReadings = readings.filter(function(r) {
+        return (AREA_REGION[(residentsMap[r.userId] || {}).address] || '其他') === reg;
+      });
+      if (regReadings.length === 0) return;
+      var regUsage = 0, regFee = 0;
+      regReadings.forEach(function(rr) {
+        if (!rr.isFirstReading) { regUsage += rr.usage || 0; regFee += rr.totalFee || 0; }
+      });
+      // 该大区下有多少户（从居民表统计）
+      var regTotal = 0;
+      Store.getResidents().forEach(function(rr) {
+        if ((AREA_REGION[rr.address] || '其他') === reg) regTotal++;
+      });
+      regionHtml += '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 cursor-pointer hover:bg-blue-50 active:scale-[0.98] transition-all" data-region-nav="' + escHtml(reg) + '">' +
+        '<div class="flex items-center justify-between">' +
+          '<div class="flex-1">' +
+            '<div class="font-bold text-sm">🏘 ' + escHtml(reg) + '</div>' +
+            '<div class="text-xs text-gray-500 mt-0.5">' + regReadings.length + '/' + regTotal + ' 户 · 用水 ' + formatNum(regUsage) + ' 吨 · 水费 ' + formatMoney(regFee) + '</div>' +
+          '</div>' +
+          '<span class="text-gray-300 text-lg">›</span>' +
+        '</div>' +
+      '</div>';
+    });
+    if (!regionHtml) {
+      listEl.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+    } else {
+      listEl.innerHTML = regionHtml + '<div class="text-center text-xs text-gray-400 mt-2">点击大区查看子地区账单</div>';
+    }
+    updateHeaderMonth();
+    return;
+  }
+
+  // 第2层：选中大区但未选子地区 → 显示子地区摘要卡片
+  if (billsRegion && !subArea) {
+    var areas = getSubAreas(billsRegion);
+    var sortedAreas = Object.keys(areas).sort();
+    var html = '';
+    sortedAreas.forEach(function(area) {
+      var areaReadings = readings.filter(function(r) {
+        return (residentsMap[r.userId] || {}).address === area;
+      });
+      if (areaReadings.length === 0) return;
+      var areaUsage = 0, areaFee = 0;
+      areaReadings.forEach(function(r) {
+        if (!r.isFirstReading) { areaUsage += r.usage || 0; areaFee += r.totalFee || 0; }
+      });
+      var areaCount = areas[area];
+      var doneCount = areaReadings.length;
+      html += '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200 cursor-pointer hover:bg-blue-50 active:scale-[0.98] transition-all" data-subarea-nav="' + escHtml(area) + '">' +
+        '<div class="flex items-center justify-between">' +
+          '<div class="flex-1">' +
+            '<div class="font-bold text-sm">📍 ' + escHtml(area) + '</div>' +
+            '<div class="text-xs text-gray-500 mt-0.5">' + doneCount + '/' + areaCount + ' 户 · 用水 ' + formatNum(areaUsage) + ' 吨 · 水费 ' + formatMoney(areaFee) + '</div>' +
+          '</div>' +
+          '<span class="text-gray-300 text-lg">›</span>' +
+        '</div>' +
+      '</div>';
+    });
+    if (!html) {
+      listEl.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+    } else {
+      listEl.innerHTML = html + '<div class="text-center text-xs text-gray-400 mt-2">点击子地区查看账单明细</div>';
+    }
+    updateHeaderMonth();
+    return;
+  }
+
+  // 显示单个账单卡片
+  var threshold2 = Store.getSettings().threshold;
+  listEl.innerHTML = readings.map(function(r) {
+    var resident = residentsMap[r.userId] || {};
+    var paidClass = r.isPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600';
+    var paidText = r.isPaid ? '已缴费' : '未缴费';
+
+    if (r.isFirstReading) {
+      return '<div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">' +
+        '<div class="flex items-center justify-between mb-1">' +
+          '<span class="font-bold text-sm">' + escHtml(resident.houseNumber || '?') + ' ' + escHtml(resident.name || '?') + '</span>' +
+          '<span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">首次建档</span>' +
+        '</div>' +
+        '<div class="text-xs text-gray-400">初始底数：' + formatNum(r.currentReading) + ' 吨（不计费）</div>' +
+      '</div>';
+    }
+
+    var isHighUsage = !r.isFirstReading && r.usage > threshold2;
+    var cardClass = isHighUsage ? 'bg-orange-50 rounded-lg p-3 shadow-sm border-l-4 border-orange-500 border-t border-r border-b border-gray-200' : 'bg-white rounded-lg p-3 shadow-sm border border-gray-200';
+
+    return '<div class="' + cardClass + '">' +
+      '<div class="flex items-center justify-between mb-2">' +
+        '<div>' +
+          '<span class="font-bold text-sm">' + escHtml(resident.houseNumber || '?') + '</span>' +
+          '<span class="text-sm text-gray-700 ml-1">' + escHtml(resident.name || '?') + '</span>' +
+          '<span class="text-xs text-gray-400 ml-2">' + escHtml(resident.address || '') + '</span>' +
+          (isHighUsage ? '<span class="text-xs text-orange-600 font-bold ml-1">⚠ 高用水</span>' : '') +
+        '</div>' +
+        '<button class="text-xs px-2 py-1 rounded-full ' + paidClass + ' font-medium" data-toggle-paid="' + r.id + '">' + paidText + '</button>' +
+      '</div>' +
+      '<div class="grid grid-cols-4 gap-2 text-center text-xs">' +
+        '<div><div class="text-gray-400">上月底数</div><div class="font-bold">' + formatNum(r.lastReading) + '</div></div>' +
+        '<div><div class="text-gray-400">本月读数</div><div class="font-bold">' + formatNum(r.currentReading) + '</div></div>' +
+        '<div><div class="text-gray-400">用水量</div><div class="font-bold ' + (isHighUsage ? 'text-orange-600' : 'text-primary') + '">' + formatNum(r.usage) + ' 吨</div></div>' +
+        '<div><div class="text-gray-400">水费</div><div class="font-bold fee-editable ' + (isHighUsage ? 'text-orange-600' : 'text-success') + '" data-edit-fee="' + r.id + '" title="点击修改水费">' + formatMoney(r.totalFee) + '</div></div>' +
+      '</div>' +
+      (r.isForced ? '<div class="text-xs text-red-500 mt-1">⚠ 异常读数强制保存</div>' : '') +
+    '</div>';
+  }).join('');
+
+  // 子地区选中时添加地区分组标题
+  if (billsRegion && subArea) {
+    var headerHtml = '<div class="area-group-header rounded-lg px-3 py-2 mb-1 text-sm font-bold text-primary">' +
+      '📍 ' + escHtml(subArea) + '</div>';
+    listEl.innerHTML = headerHtml + listEl.innerHTML;
+  }
+
+  updateHeaderMonth();
+}
+
+// 事件委托：切换缴费状态 + 修改水费 + 大区导航
+$('#bills-list').addEventListener('click', function(e) {
+  // 点击大区摘要卡片 → 展开子地区
+  var regionNav = e.target.closest('[data-region-nav]');
+  if (regionNav) {
+    billsRegion = regionNav.getAttribute('data-region-nav');
+    buildSubAreaBar('bills', billsRegion, '');
+    syncRegionChips('bills-area-index', billsRegion);
+    renderBillsView();
+    return;
+  }
+  var navCard = e.target.closest('[data-subarea-nav]');
+  if (navCard) {
+    var area = navCard.getAttribute('data-subarea-nav');
+    buildSubAreaBar('bills', billsRegion, area);
+    renderBillsView(area);
+    return;
+  }
+  // 点击水费进行编辑
+  var feeEl = e.target.closest('[data-edit-fee]');
+  if (feeEl && !feeEl.querySelector('input')) {
+    var readingId = feeEl.getAttribute('data-edit-fee');
+    var currentFee = parseFloat(feeEl.textContent.replace(/[¥,]/g, '')) || 0;
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.inputMode = 'decimal';
+    input.step = '0.01';
+    input.min = '0';
+    input.value = currentFee.toFixed(2);
+    input.className = 'w-16 text-center font-bold text-sm border-2 border-primary rounded bg-blue-50 focus:outline-none';
+    feeEl.textContent = '';
+    feeEl.appendChild(input);
+    input.focus();
+    input.select();
+    var feeSaved = false;
+    var saveFee = function() {
+      if (feeSaved) return;
+      feeSaved = true;
+      var newFee = parseFloat(input.value);
+      if (isNaN(newFee) || newFee < 0) {
+        feeEl.textContent = formatMoney(currentFee);
+        return;
+      }
+      Store.updateReadingFee(readingId, newFee);
+      feeEl.textContent = formatMoney(newFee);
+      updateBillsSummary();
+    };
+    input.addEventListener('blur', saveFee);
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') { input.blur(); }
+      if (ev.key === 'Escape') { feeEl.textContent = formatMoney(currentFee); feeSaved = true; }
+    });
+    return;
+  }
+  var btn = e.target.closest('[data-toggle-paid]');
+  if (!btn) return;
+  var newStatus = Store.togglePaid(btn.getAttribute('data-toggle-paid'));
+  showToast(newStatus ? '已标记为已缴费' : '已标记为未缴费', 'success');
+  var activeSub = document.querySelector('#bills-subarea-index .area-chip.active[data-subarea]');
+  renderBillsView(activeSub ? activeSub.getAttribute('data-subarea') : undefined);
+});
+
+$('#bills-month').addEventListener('change', function() { renderBillsView(); });
+$('#bills-filter').addEventListener('change', function() { renderBillsView(); });
+
+/** 从当前 DOM 重新计算账单汇总（水费修改后调用） */
+function updateBillsSummary() {
+  var totalFee = 0;
+  var feeEls = document.querySelectorAll('#bills-list [data-edit-fee]');
+  feeEls.forEach(function(el) {
+    totalFee += parseFloat(el.textContent.replace(/[¥,]/g, '')) || 0;
+  });
+  // 计费卡片数 = 有 data-edit-fee 的元素数
+  var billCount = feeEls.length;
+  // 加上首次建档卡片数
+  var firstBadges = document.querySelectorAll('#bills-list .bg-gray-100');
+  firstBadges.forEach(function(badge) {
+    if (badge.textContent.indexOf('首次建档') > -1) billCount++;
+  });
+  if (billCount > 0) $('#bills-count').textContent = billCount;
+  $('#bills-total-fee').textContent = formatMoney(totalFee);
+}
+
+// ==================== 视图4: 数据导出 ====================
+function initExportView() { $('#export-month').value = getNowMonth(); }
+
+$('#btn-export-csv').addEventListener('click', function() {
+  var month = $('#export-month').value;
+  var readings = Store.getReadingsByMonth(month);
+  var residentsMap = {};
+  Store.getResidents().forEach(function(r) { residentsMap[r.id] = r; });
+
+  if (readings.length === 0) {
+    showToast(monthLabel(month) + ' 暂无抄表记录可导出', 'warn');
+    return;
+  }
+
+  // CSV with BOM for Excel UTF-8 compatibility
+  var csv = '﻿户号,住户姓名,房号,上月读数(吨),本次读数(吨),用水量(吨),水费(元),缴费状态,备注\n';
+  readings.forEach(function(r) {
+    var resident = residentsMap[r.userId] || {};
+    var note = r.isFirstReading ? '首次建档不计费' : (r.isForced ? '异常读数强制保存' : '');
+    csv += [
+      csvEscape(resident.houseNumber), csvEscape(resident.name), csvEscape(resident.address),
+      formatNum(r.lastReading), formatNum(r.currentReading),
+      r.isFirstReading ? '0' : formatNum(r.usage),
+      r.isFirstReading ? '0' : formatNum(r.totalFee),
+      r.isPaid ? '已缴费' : '未缴费', csvEscape(note)
+    ].join(',') + '\n';
+  });
+
+  downloadFile('水表账单_' + month + '.csv', csv, 'text/csv;charset=utf-8');
+  showToast('CSV 导出成功，可用 Excel 打开', 'success');
+});
+
+$('#btn-export-json').addEventListener('click', function() {
+  var json = Store.exportAll();
+  var now = new Date();
+  var filename = '水表数据备份_' + now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '.json';
+  downloadFile(filename, json, 'application/json');
+  showToast('数据备份成功', 'success');
+});
+
+$('#btn-import-json').addEventListener('click', function() { $('#import-file-input').click(); });
+
+$('#import-file-input').addEventListener('change', function() {
+  var file = this.files[0];
+  if (!file) return;
+  showConfirm('📥', '导入备份将覆盖当前全部数据（住户档案+抄表记录），确定继续吗？', '确认导入', 'bg-warn hover:bg-amber-600', function() {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var result = Store.importAll(e.target.result);
+      if (result.ok) {
+        showToast('数据恢复成功！导入 ' + result.count.residents + ' 户住户、' + result.count.readings + ' 条抄表记录', 'success');
+        refreshAllViews();
+      } else { showToast(result.msg, 'error'); }
+    };
+    reader.onerror = function() { showToast('文件读取失败', 'error'); };
+    reader.readAsText(file);
+  });
+  this.value = '';
+});
+
+// ==================== Excel 导入 ====================
+// 列名映射：支持常见中文列名变体（精确匹配 + 模糊匹配）
+var COLUMN_MAP = {
+  houseNumber:  ['户号','编号','序号','户编号'],
+  name:         ['姓名','住户姓名','户主姓名','名称','户主','住户'],
+  address:      ['住址','地址','房号','门牌号','详细地址'],
+  phone:        ['电话','联系电话','手机','手机号','联系方式'],
+  initialReading: ['初始底数','初始读数','上月底数','初始水表底数','起始读数','底数'],
+  month:        ['月份','抄表月份','年月','抄表年月','周期'],
+  currentReading: ['本次读数','当前读数','抄表读数','水表读数','读数','本月读数']
+};
+
+function detectColumns(headers) {
+  var mapping = {};
+  var unknown = [];
+  headers.forEach(function(h, i) {
+    var hClean = String(h || '').trim();
+    if (!hClean) { unknown.push('(空)'); return; }
+    var found = false;
+    for (var key in COLUMN_MAP) {
+      if (COLUMN_MAP[key].indexOf(hClean) !== -1) {
+        mapping[key] = i;
+        found = true;
+        break;
+      }
+    }
+    // 模糊匹配：包含关键词
+    if (!found) {
+      for (var key2 in COLUMN_MAP) {
+        var matched = COLUMN_MAP[key2].some(function(kw) {
+          return hClean.indexOf(kw) !== -1 || kw.indexOf(hClean) !== -1;
+        });
+        if (matched) { mapping[key2] = i; found = true; break; }
+      }
+    }
+    if (!found) unknown.push(hClean);
+  });
+  return { mapping: mapping, unknown: unknown };
+}
+
+/** 将月份值转为 YYYY-MM 格式，支持日期序列号、各种文本格式 */
+function parseMonthValue(val) {
+  if (typeof val === 'number' && val > 40000 && val < 60000) {
+    // Excel 日期序列号 → 转为日期
+    var d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    if (isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  var s = String(val || '').trim();
+  // 匹配: 2026-07, 2026/07, 202607, 2026年07月, 2026年7月
+  var m = s.match(/(\d{4})\s*[-年\/]\s*(\d{1,2})/);
+  if (m) return m[1] + '-' + String(parseInt(m[2])).padStart(2, '0');
+  // 匹配纯数字 202607
+  m = s.match(/^(\d{4})(\d{2})$/);
+  if (m) return m[1] + '-' + m[2];
+  return '';
+}
+
+// ==================== 古三水费收据格式专用解析 ====================
+// 用于解析 "古三水费收款收据" 发票格式的水表单（非标准表格布局）
+var CN_MONTH = { '一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'十一':11,'十二':12 };
+
+/** 从 sheet 名称提取区域名和月份数字 */
+function parseSheetName(sn) {
+  sn = sn.trim();
+  // "美厝 (六)" / "东厝(三)" / "2书斋堂2 (四)"
+  var m = sn.match(/[（(]\s*([一二三四五六七八九十]+)\s*[）)]/);
+  if (m) {
+    var area = sn.replace(/[（(].*[）)]/, '').trim();
+    area = area.replace(/^\d+/, '').trim(); // 去掉前导数字 "2书斋堂2" → "书斋堂2"
+    return { area: area, month: CN_MONTH[m[1]] || 0 };
+  }
+  // "11月现金" / "3月现金"
+  m = sn.match(/(\d+)\s*月/);
+  if (m) return { area: '现金', month: parseInt(m[1]) };
+  return { area: sn.replace(/^\d+/, '').trim(), month: 0 };
+}
+
+/** 解析单个收据格式 sheet — 兼容美厝和客仔园两种列布局 */
+function parseReceiptSheet(ws, sheetName) {
+  var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+  var info = parseSheetName(sheetName);
+  var area = info.area;
+  var sheetMonth = info.month;
+  var residentsMap = {};
+  var readings = [];
+  var year = 2026;
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (!row || !row.length) continue;
+
+    // 整行文本用于模式匹配
+    var rowCells = row.map(function(c) { return String(c || ''); });
+    var rowText = rowCells.join(' ');
+
+    // 标题行："古三(六月份)水费收款收据" / "古三水费收款收据  三月份"
+    if (rowText.indexOf('水费收款收据') > -1) {
+      for (var mn in CN_MONTH) {
+        if (rowText.indexOf(mn + '月份') > -1) { sheetMonth = CN_MONTH[mn]; break; }
+      }
+      continue;
+    }
+
+    // 信息行：同时包含"姓名"和"编号"
+    if (rowText.indexOf('姓名') > -1 && rowText.indexOf('编号') > -1) {
+      var name = '', numberStr = '';
+
+      for (var c = 0; c < rowCells.length; c++) {
+        var cell = rowCells[c].trim();
+        if (!cell) continue;
+
+        // 姓名提取
+        if (!name) {
+          // 格式A: "姓名:创金" 在同一格（美厝）
+          var nm = cell.match(/^姓名[：:]\s*(.+)/);
+          if (nm) { name = nm[1].trim(); }
+          // 格式B: "姓名:" 在列c，名字值在列c+1（客仔园）
+          else if ((cell === '姓名:' || cell === '姓名：') && c + 1 < rowCells.length) {
+            name = rowCells[c + 1].trim();
+          }
+        }
+
+        // 编号提取
+        if (!numberStr) {
+          // 格式A: "编号(美厝):1" 在同一格
+          var numMatch = cell.match(/编号[（(]?[^:：\d]*[）)]?\s*[：:]\s*(\d+)/);
+          if (numMatch) { numberStr = numMatch[1]; }
+          // 格式B: "书斋堂编号:" 有冒号，编号值在下一列
+          else if (cell.indexOf('编号') > -1 && (cell.indexOf(':') > -1 || cell.indexOf('：') > -1) && c + 1 < rowCells.length) {
+            var nextVal = rowCells[c + 1].trim();
+            var n = nextVal.match(/^(\d+)/);
+            if (n) numberStr = n[1];
+          }
+          // 格式C: "东浦沟编号" 无冒号，编号值在下一列
+          else if (cell.indexOf('编号') > -1 && c + 1 < rowCells.length) {
+            var nextVal = rowCells[c + 1].trim();
+            var n = nextVal.match(/^(\d+)/);
+            if (n) numberStr = n[1];
+          }
+        }
+
+        // 年份提取 "2026年"
+        var ym = cell.match(/(\d{4})\s*年/);
+        if (ym) year = parseInt(ym[1]);
+      }
+
+      // 清理姓名（去掉"现金"后缀）
+      name = name.replace(/\s*[（(]现金[）)]\s*$/,'').replace(/\s*现金\s*$/,'').trim();
+      if (!name) continue;
+
+      // 从编号标签提取区域名（支持三种格式）
+      // "编号(美厝)" → 美厝 / "东浦沟编号" → 东浦沟 / "书斋堂编号:" → 书斋堂
+      for (var c2 = 0; c2 < rowCells.length; c2++) {
+        var cell2 = rowCells[c2].trim();
+        // 格式: "XXX编号" 或 "XXX编号:" → 区域在编号前面
+        var prefixMatch = cell2.match(/^(.+?)编号[：:]?\s*$/);
+        if (prefixMatch && prefixMatch[1].trim().length > 0 && prefixMatch[1].trim().length < 12) {
+          area = prefixMatch[1].trim();
+          break;
+        }
+        // 格式: "编号(美厝)" → 区域在括号中 / "编号(美厝):1"
+        var parenMatch = cell2.match(/编号[（(]([^）)]+)[）)]/);
+        if (parenMatch && parenMatch[1].length < 12) {
+          area = parenMatch[1];
+          break;
+        }
+      }
+
+      var houseNumber = area + '-' + (numberStr || '0');
+      if (!residentsMap[houseNumber]) {
+        residentsMap[houseNumber] = {
+          houseNumber: houseNumber,
+          name: name,
+          address: area,
+          phone: '',
+          initialReading: 0
+        };
+      }
+
+      // 数据行：信息行后第1行=表头（"上月吨位…"），第2行=数据
+      if (i + 2 < rows.length) {
+        var headerRow = rows[i + 1];
+        var headerText = headerRow.map(function(c) { return String(c || ''); }).join(' ');
+        if (headerText.indexOf('上月') > -1) {
+          var dataRow = rows[i + 2];
+          var currentReading = parseFloat(dataRow[1]) || 0;
+          if (sheetMonth > 0 && currentReading > 0) {
+            var monthStr = year + '-' + String(sheetMonth).padStart(2, '0');
+            readings.push({
+              houseNumber: houseNumber,
+              month: monthStr,
+              currentReading: currentReading
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return { residents: Object.values(residentsMap), readings: readings };
+}
+
+/** 检测 Excel 是否为古三水费收据格式 */
+function isReceiptFormat(workbook) {
+  if (!workbook || !workbook.SheetNames || !workbook.SheetNames.length) return false;
+  var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!firstSheet) return false;
+  var rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '', raw: false });
+  for (var i = 0; i < Math.min(rows.length, 12); i++) {
+    var row = rows[i];
+    if (row && row.length) {
+      var text = row.map(function(c) { return String(c || ''); }).join(' ');
+      if (text.indexOf('水费收款收据') > -1) return true;
+    }
+  }
+  return false;
+}
+
+/** 解析整个收据格式 workbook（遍历所有 sheet 合并结果） */
+function parseReceiptWorkbook(workbook) {
+  var allResidents = {};
+  var allReadings = [];
+
+  workbook.SheetNames.forEach(function(sn) {
+    // 跳过无关 sheet
+    if (/^Sheet\d*$/.test(sn) || /^Chart\d*$/.test(sn)) return;
+    var ws = workbook.Sheets[sn];
+    try {
+      var result = parseReceiptSheet(ws, sn);
+      result.residents.forEach(function(r) {
+        if (!allResidents[r.houseNumber]) {
+          allResidents[r.houseNumber] = r;
+        } else if (!allResidents[r.houseNumber].name && r.name) {
+          allResidents[r.houseNumber].name = r.name;
+        }
+      });
+      allReadings = allReadings.concat(result.readings);
+    } catch(e) {
+      console.warn('跳过 sheet "' + sn + '":', e.message);
+    }
+  });
+
+  // 按月份排序确保上月读数能正确关联
+  allReadings.sort(function(a, b) { return a.month.localeCompare(b.month); });
+
+  return {
+    residents: Object.values(allResidents),
+    readings: allReadings
+  };
+}
+
+function parseExcelData(workbook) {
+  var sheetName = workbook.SheetNames[0];
+  var sheet = workbook.Sheets[sheetName];
+  // raw: false 使日期单元格返回格式化字符串，更易解析
+  var rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+
+  if (rows.length === 0) return { ok: false, msg: 'Excel 文件中没有数据，请检查文件内容' };
+
+  var headers = Object.keys(rows[0]);
+  var detected = detectColumns(headers);
+
+  if (!detected.mapping.houseNumber) {
+    return {
+      ok: false,
+      msg: '未识别到"户号"列，请确保 Excel 第一行为表头且包含"户号"。\n检测到的列：' + headers.join('、')
+    };
+  }
+
+  var residentsMap = {};
+  var readings = [];
+
+  rows.forEach(function(row) {
+    var hn = String(row[headers[detected.mapping.houseNumber]] || '').trim();
+    if (!hn) return; // 跳过空行
+
+    // 提取住户信息
+    var name = detected.mapping.name ? String(row[headers[detected.mapping.name]] || '').trim() : '';
+    var address = detected.mapping.address ? String(row[headers[detected.mapping.address]] || '').trim() : '';
+    var phone = detected.mapping.phone ? String(row[headers[detected.mapping.phone]] || '').trim() : '';
+    var initialReading = detected.mapping.initialReading ? parseFloat(row[headers[detected.mapping.initialReading]]) || 0 : 0;
+
+    if (!residentsMap[hn]) {
+      residentsMap[hn] = { houseNumber: hn, name: name, address: address, phone: phone, initialReading: initialReading };
+    }
+
+    // 提取抄表记录（月份 + 本次读数都存在时才添加）
+    if (detected.mapping.month !== undefined && detected.mapping.currentReading !== undefined) {
+      var rawMonth = row[headers[detected.mapping.month]];
+      var month = parseMonthValue(rawMonth);
+      var cr = parseFloat(row[headers[detected.mapping.currentReading]]);
+      if (month && !isNaN(cr) && cr >= 0) {
+        readings.push({ houseNumber: hn, month: month, currentReading: cr });
+      }
+    }
+  });
+
+  var residents = Object.values(residentsMap);
+  return {
+    ok: true,
+    residents: residents,
+    readings: readings,
+    hasReadings: detected.mapping.month !== undefined && detected.mapping.currentReading !== undefined,
+    unknownCols: detected.unknown
+  };
+}
+
+function importExcelData(parsed) {
+  var residentsAdded = 0, residentsSkipped = 0;
+  var readingsSaved = 0, readingsSkipped = 0;
+
+  // 阶段 1：导入住户
+  parsed.residents.forEach(function(r) {
+    var result = Store.addResident(r);
+    if (result.ok) residentsAdded++;
+    else residentsSkipped++;
+  });
+
+  // 阶段 2：按月份排序后导入抄表记录，确保上月读数能正确关联
+  if (parsed.readings.length > 0) {
+    parsed.readings.sort(function(a, b) { return a.month.localeCompare(b.month); });
+    var allResidents = Store.getResidents();
+
+    parsed.readings.forEach(function(r) {
+      var resident = allResidents.find(function(res) { return res.houseNumber === r.houseNumber; });
+      if (!resident) { readingsSkipped++; return; }
+
+      var result = Store.saveReading(resident.id, r.month, r.currentReading, false);
+      if (result.ok) {
+        readingsSaved++;
+      } else if (result.needConfirm) {
+        // 读数异常或高用水量 → 静默强制保存（批量导入场景不适合逐个弹窗确认）
+        var fr = Store.saveReading(resident.id, r.month, r.currentReading, true);
+        if (fr.ok) readingsSaved++;
+        else readingsSkipped++;
+      } else {
+        readingsSkipped++;
+      }
+    });
+  }
+
+  return {
+    residentsAdded: residentsAdded,
+    residentsSkipped: residentsSkipped,
+    readingsSaved: readingsSaved,
+    readingsSkipped: readingsSkipped
+  };
+}
+
+// Excel 导入按钮
+$('#btn-import-excel').addEventListener('click', function() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel 解析库加载失败，请检查网络连接后刷新页面重试', 'error');
+    return;
+  }
+  $('#excel-file-input').click();
+});
+
+$('#excel-file-input').addEventListener('change', function() {
+  var file = this.files[0];
+  if (!file) return;
+
+  // 检查文件类型
+  var validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'application/vnd.ms-excel',
+                    'application/octet-stream'];
+  var validExt = /\.(xlsx|xls)$/i;
+  if (!validExt.test(file.name)) {
+    showToast('请选择 .xlsx 或 .xls 格式的 Excel 文件', 'warn');
+    this.value = '';
+    return;
+  }
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array', cellFormula: true, cellNF: true });
+      // 自动检测格式：古三水费收据 vs 标准表格
+      var parsed;
+      if (isReceiptFormat(workbook)) {
+        // 古三水费收款收据格式
+        parsed = parseReceiptWorkbook(workbook);
+        if (parsed.residents.length === 0) {
+          showToast('未从收据中识别到数据，请检查文件格式', 'error');
+          return;
+        }
+      } else {
+        // 标准表格格式
+        parsed = parseExcelData(workbook);
+        if (!parsed.ok) {
+          showToast(parsed.msg, 'error');
+          return;
+        }
+      }
+
+      // 预览确认
+      var previewMsg = '即将导入以下数据：\n• ' + parsed.residents.length + ' 户住户信息';
+      if (parsed.readings.length > 0) {
+        previewMsg += '\n• ' + parsed.readings.length + ' 条抄表记录';
+      }
+      previewMsg += '\n\n⚠️ 注意：\n- 现有数据不会被删除\n- 户号重复的住户将自动跳过\n- 读数异常/高用水量记录将自动强制保存\n\n确定要导入吗？';
+
+      showConfirm('📋', previewMsg, '确认导入', 'bg-success hover:bg-green-700', function() {
+        var result = importExcelData(parsed);
+        var parts = [];
+        if (result.residentsAdded > 0) parts.push('新增 ' + result.residentsAdded + ' 户住户');
+        if (result.residentsSkipped > 0) parts.push('跳过 ' + result.residentsSkipped + ' 户（户号重复）');
+        if (result.readingsSaved > 0) parts.push('导入 ' + result.readingsSaved + ' 条抄表记录');
+        if (result.readingsSkipped > 0) parts.push('跳过 ' + result.readingsSkipped + ' 条记录');
+        showToast('✅ ' + parts.join('，'), 'success');
+        refreshAllViews();
+      });
+
+    } catch(err) {
+      showToast('Excel 文件解析失败：' + err.message, 'error');
+      console.error(err);
+    }
+  };
+  reader.onerror = function() { showToast('文件读取失败，请重试', 'error'); };
+  reader.readAsArrayBuffer(file);
+  this.value = '';
+});
+
+// 下载 Excel 导入模板
+$('#btn-download-template').addEventListener('click', function() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel 解析库加载失败，请检查网络连接后刷新页面重试', 'error');
+    return;
+  }
+  try {
+    var wb = XLSX.utils.book_new();
+
+    // 模板示例数据
+    var templateData = [
+      { '户号': 'A001', '住户姓名': '张三', '房号/住址': '1栋101室', '联系电话': '13800000000', '初始底数': 100, '月份': '2026-07', '本次读数': 150 },
+      { '户号': 'A002', '住户姓名': '李四', '房号/住址': '1栋102室', '联系电话': '13800000001', '初始底数': 200, '月份': '2026-07', '本次读数': 255 },
+      { '户号': 'A003', '住户姓名': '王五', '房号/住址': '2栋201室', '联系电话': '',          '初始底数': 50,  '月份': '',        '本次读数': ''   }
+    ];
+
+    var ws = XLSX.utils.json_to_sheet(templateData);
+    ws['!cols'] = [
+      { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 12 }, { wch: 10 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, '水表数据');
+
+    // 说明 sheet
+    var instructions = [
+      { '导入说明（请阅读后删除本 sheet）': '' },
+      { '导入说明（请阅读后删除本 sheet）': '━━━ 水表 Excel 导入模板使用说明 ━━━' },
+      { '导入说明（请阅读后删除本 sheet）': '' },
+      { '导入说明（请阅读后删除本 sheet）': '1. "户号" 为必填列，其他列可选填' },
+      { '导入说明（请阅读后删除本 sheet）': '2. 月份格式：2026-07（年份-月份），也支持 2026/07、2026年07月' },
+      { '导入说明（请阅读后删除本 sheet）': '3. 仅导入住户：月份和本次读数两列留空即可' },
+      { '导入说明（请阅读后删除本 sheet）': '4. 导入抄表记录：需同时填写"月份"和"本次读数"' },
+      { '导入说明（请阅读后删除本 sheet）': '5. 户号重复的住户会被自动跳过（不会覆盖已有数据）' },
+      { '导入说明（请阅读后删除本 sheet）': '6. 首次录入的读数系统会自动识别为初始底数，不计费' },
+      { '导入说明（请阅读后删除本 sheet）': '7. 表头名称支持模糊匹配，如"姓名""户主姓名"均可识别' },
+      { '导入说明（请阅读后删除本 sheet）': '8. 请删除示例数据行后填入实际数据再导入' }
+    ];
+    var ws2 = XLSX.utils.json_to_sheet(instructions);
+    ws2['!cols'] = [{ wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, ws2, '导入说明');
+
+    XLSX.writeFile(wb, '水表导入模板.xlsx');
+    showToast('📝 模板已下载，请用 Excel 打开后填写数据再导入', 'success');
+  } catch(err) {
+    showToast('模板生成失败：' + err.message, 'error');
+  }
+});
+
+function downloadFile(filename, content, mimeType) {
+  var blob = new Blob([content], { type: mimeType });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ==================== 视图5: 系统设置 ====================
+function initSettingsView() {
+  var settings = Store.getSettings();
+  $('#setting-price').value = settings.unitPrice;
+  $('#setting-threshold').value = settings.threshold;
+}
+
+$('#btn-save-price').addEventListener('click', function() {
+  var val = parseFloat($('#setting-price').value);
+  if (isNaN(val) || val <= 0) { showToast('请输入有效的水价（大于0）', 'error'); return; }
+  Store.updateSettings({ unitPrice: Math.round(val * 100) / 100 });
+  showToast('水价已更新为 ' + formatMoney(val) + ' / 吨', 'success');
+});
+
+$('#btn-save-threshold').addEventListener('click', function() {
+  var val = parseInt($('#setting-threshold').value);
+  if (isNaN(val) || val <= 0) { showToast('请输入有效的阈值', 'error'); return; }
+  Store.updateSettings({ threshold: val });
+  showToast('高用水量提醒阈值已更新为 ' + val + ' 吨/月', 'success');
+});
+
+$('#btn-clear-data').addEventListener('click', showClearConfirm);
+
+// ==================== 全局键盘事件 ====================
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    hideModal(); hideConfirm(); hideClearConfirm();
+    if (currentView === 'reading' && !$('#reading-entry-mode').classList.contains('hidden')) {
+      $('#btn-reading-back').click();
+    }
+  }
+});
+
+// ==================== PWA Manifest & Service Worker ====================
+(function setupPWA() {
+  // 动态创建 manifest
+  var manifest = {
+    name: '水表抄表计费工具',
+    short_name: '水表抄表',
+    description: '居民水表抄表计费工具，移动端离线可用',
+    start_url: location.href,
+    display: 'standalone',
+    orientation: 'portrait',
+    theme_color: '#2563eb',
+    background_color: '#f9fafb',
+    icons: [{
+      src: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#2563eb"/><circle cx="50" cy="40" r="15" fill="none" stroke="#fff" stroke-width="4"/><path d="M35 80l8-20a2 2 0 012-2h10a2 2 0 012 2l8 20" fill="none" stroke="#fff" stroke-width="4"/><path d="M28 80h44" stroke="#fff" stroke-width="4"/></svg>'),
+      sizes: '100x100',
+      type: 'image/svg+xml',
+      purpose: 'any'
+    }]
+  };
+  var manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+  var manifestLink = document.createElement('link');
+  manifestLink.rel = 'manifest';
+  manifestLink.href = URL.createObjectURL(manifestBlob);
+  document.head.appendChild(manifestLink);
+
+  // 注册 Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function() {
+      // SW 注册失败不影响主功能，应用仍可通过 localStorage 离线使用
+    });
+  }
+})();
+
+// ==================== 应用启动 ====================
+function init() {
+  var nowMonth = getNowMonth();
+  $('#reading-month').value = nowMonth;
+  $('#bills-month').value = nowMonth;
+  $('#export-month').value = nowMonth;
+
+  // 自动检测预置数据：首次打开时 localStorage 为空且有预置数据
+  if (typeof PRELOADED_WATER_DATA !== 'undefined' && Store.getResidents().length === 0) {
+    var jsonStr = JSON.stringify(PRELOADED_WATER_DATA);
+    var result = Store.importAll(jsonStr);
+    if (result.ok) {
+      showToast('✅ 已自动导入预置数据：' + result.count.residents + ' 户住户、' + result.count.readings + ' 条记录', 'success');
+    }
+  }
+
+  buildAreaIndex();
+  renderResidentList();
+  updateHeaderMonth();
+}
+
+init();
+</script>
+
+</body>
+</html>
